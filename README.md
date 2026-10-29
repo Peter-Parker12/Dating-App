@@ -17,12 +17,10 @@ npm run dev:web    # :3000 (proxies /api and /socket.io to the API)
 npm test
 ```
 
-## Deploy (VPS, Docker, Cloudflare Tunnel)
+## Deploy (VPS, Docker)
 ```bash
 cp .env.example .env   # fill in secrets
 docker compose up -d --build         # app on host port 2829
-docker compose --profile tunnel up -d   # adds cloudflared
 ```
-In Cloudflare Zero Trust, create a tunnel, set its public hostname service to `http://proxy:2829`,
-and put the tunnel token in `CLOUDFLARE_TUNNEL_TOKEN`. Only port 2829 is published; bind it to
-127.0.0.1 in compose if the tunnel is the only way in.
+Cloudflare Tunnel runs on the VPS itself: point its public hostname at `http://localhost:2829`.
+Consider binding the port to loopback (`127.0.0.1:2829:2829` in compose) so only the tunnel can reach it.

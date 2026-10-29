@@ -50,17 +50,6 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
 
-  # Start with: docker compose --profile tunnel up -d
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    profiles: ["tunnel"]
-    restart: unless-stopped
-    depends_on:
-      - proxy
-    command: tunnel --no-autoupdate run
-    environment:
-      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN in .env}
-
 volumes:
   dbdata:
   uploads:
