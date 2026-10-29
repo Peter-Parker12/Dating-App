@@ -19,8 +19,7 @@ npm test
 
 ## Deploy (VPS, Docker, Cloudflare Tunnel)
 ```bash
-cp deploy/.env.example deploy/.env   # fill in secrets
-cd deploy
+cp .env.example .env   # fill in secrets
 docker compose up -d --build         # app on host port 2829
 docker compose --profile tunnel up -d   # adds cloudflared
 ```

@@ -4,7 +4,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: cungdi
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: cungdi
     volumes:
       - dbdata:/var/lib/postgresql/data
@@ -15,7 +15,7 @@ services:
 
   api:
     build:
-      context: ..
+      context: .
       dockerfile: apps/api/Dockerfile
     restart: unless-stopped
     depends_on:
@@ -23,17 +23,17 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://cungdi:${POSTGRES_PASSWORD}@db:5432/cungdi
-      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in deploy/.env}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       COOKIE_SECURE: "true"
-      ADMIN_EMAIL: ${ADMIN_EMAIL:?set ADMIN_EMAIL in deploy/.env}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in deploy/.env}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?set ADMIN_EMAIL in .env}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
       SEED_DEMO: ${SEED_DEMO:-false}
     volumes:
       - uploads:/data/uploads
 
   web:
     build:
-      context: ..
+      context: .
       dockerfile: apps/web/Dockerfile
     restart: unless-stopped
     depends_on:
@@ -59,7 +59,7 @@ services:
       - proxy
     command: tunnel --no-autoupdate run
     environment:
-      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN in deploy/.env}
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN in .env}
 
 volumes:
   dbdata:

@@ -2,5 +2,5 @@
 **/.next
 **/dist
 .git
-deploy/.env
+.env
 **/uploads
