@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { vnd, type Talent } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
+import Avatar from "./Avatar";
 
 export default function TalentCard({ talent, saved, onToggleSave }: {
   talent: Talent; saved?: boolean; onToggleSave?: () => void;
@@ -10,9 +11,7 @@ export default function TalentCard({ talent, saved, onToggleSave }: {
   return (
     <div className="card flex flex-col gap-3">
       <Link href={`/talent/${talent.id}`} className="flex items-center gap-3">
-        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-brand-100 text-2xl font-bold text-brand-600">
-          {talent.displayName.charAt(0)}
-        </div>
+        <Avatar talent={talent} className="h-16 w-16 text-2xl" />
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="truncate font-bold">{talent.displayName}, {talent.age}</span>

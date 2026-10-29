@@ -4,6 +4,7 @@ import Link from "next/link";
 import { api, vnd, type Activity, type Talent } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
+import Avatar from "@/components/Avatar";
 
 export default function TalentPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -37,13 +38,21 @@ export default function TalentPage({ params }: { params: Promise<{ id: string }>
   return (
     <div className="card space-y-4">
       <div className="flex items-center gap-4">
-        <div className="flex h-24 w-24 items-center justify-center rounded-full bg-brand-100 text-4xl font-bold text-brand-600">{talent.displayName.charAt(0)}</div>
+        <Avatar talent={talent} className="h-24 w-24 text-4xl" />
         <div>
           <h1 className="text-2xl font-bold">{talent.displayName}</h1>
           {talent.verified && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">✓ {t("talent.verified")}</span>}
           <div className="mt-1 font-semibold text-brand-600">{vnd(talent.hourlyPrice)} {t("talent.perHour")}</div>
         </div>
       </div>
+      {talent.photos.length > 1 && (
+        <div className="grid grid-cols-2 gap-2">
+          {talent.photos.map((src) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img key={src} src={src} alt={talent.displayName} className="aspect-[3/4] w-full rounded-xl object-cover" />
+          ))}
+        </div>
+      )}
       <p className="whitespace-pre-line text-sm text-slate-700">{talent.bio}</p>
       <dl className="grid gap-2 text-sm sm:grid-cols-2">
         {rows.map(([k, v]) => (<div key={k}><dt className="text-xs font-semibold text-slate-500">{k}</dt><dd>{v}</dd></div>))}

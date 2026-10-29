@@ -14,11 +14,11 @@ const activities = [
 ];
 
 const talents = [
-  { name: "Minh Anh", gender: "female", age: 21, price: 150000, style: "Dịu dàng, năng động", langs: ["Tiếng Việt", "English"], acts: ["cafe", "study", "temple"] },
-  { name: "Gia Hân", gender: "female", age: 22, price: 200000, style: "Thanh lịch", langs: ["Tiếng Việt", "English", "日本語"], acts: ["party", "family", "cafe"] },
-  { name: "Quốc Bảo", gender: "male", age: 23, price: 180000, style: "Thể thao, lịch sự", langs: ["Tiếng Việt", "English"], acts: ["gym", "cafe", "party"] },
-  { name: "Thu Hà", gender: "female", age: 20, price: 120000, style: "Hiền, dễ gần", langs: ["Tiếng Việt"], acts: ["study", "cafe", "online-chat"] },
-  { name: "Đức Huy", gender: "male", age: 24, price: 250000, style: "Chững chạc", langs: ["Tiếng Việt", "English", "中文"], acts: ["family", "party", "temple"] },
+  { name: "Minh Anh", slug: "minh-anh", gender: "female", age: 21, price: 150000, style: "Dịu dàng, năng động", langs: ["Tiếng Việt", "English"], acts: ["cafe", "study", "temple"] },
+  { name: "Gia Hân", slug: "gia-han", gender: "female", age: 22, price: 200000, style: "Thanh lịch", langs: ["Tiếng Việt", "English", "日本語"], acts: ["party", "family", "cafe"] },
+  { name: "Quốc Bảo", slug: "quoc-bao", gender: "male", age: 23, price: 180000, style: "Thể thao, lịch sự", langs: ["Tiếng Việt", "English"], acts: ["gym", "cafe", "party"] },
+  { name: "Thu Hà", slug: "thu-ha", gender: "female", age: 20, price: 120000, style: "Hiền, dễ gần", langs: ["Tiếng Việt"], acts: ["study", "cafe", "online-chat"] },
+  { name: "Đức Huy", slug: "duc-huy", gender: "male", age: 24, price: 250000, style: "Chững chạc", langs: ["Tiếng Việt", "English", "中文"], acts: ["family", "party", "temple"] },
 ];
 
 async function main() {
@@ -46,11 +46,11 @@ async function main() {
       where: { userId: user.id },
       create: {
         userId: user.id, displayName: t.name, gender: t.gender, age: t.age, hourlyPrice: t.price,
-        style: t.style, languages: t.langs, activities: t.acts, photos: [], heightCm: 160 + i * 4,
+        style: t.style, languages: t.langs, activities: t.acts, photos: [`/photos/${t.slug}-1.jpg`, `/photos/${t.slug}-2.jpg`], heightCm: 160 + i * 4,
         bio: "Xin chào! Mình thích gặp gỡ và trò chuyện. / Hi! I enjoy meeting new people.",
         availability: "Tối thứ 2-6, cả ngày cuối tuần",
       },
-      update: {},
+      update: { photos: [`/photos/${t.slug}-1.jpg`, `/photos/${t.slug}-2.jpg`] },
     });
   }
 }

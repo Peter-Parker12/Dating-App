@@ -24,3 +24,6 @@ docker compose up -d --build         # app on host port 2829
 ```
 Cloudflare Tunnel runs on the VPS itself: point its public hostname at `http://localhost:2829`.
 Consider binding the port to loopback (`127.0.0.1:2829:2829` in compose) so only the tunnel can reach it.
+
+## Credits
+Demo profile photos in `apps/web/public/photos` are Unsplash stock images (Unsplash License).
