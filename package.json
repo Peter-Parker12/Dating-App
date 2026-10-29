@@ -1,0 +1,10 @@
+{
+  "name": "cung-di",
+  "private": true,
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "dev:api": "npm -w apps/api run dev",
+    "dev:web": "npm -w apps/web run dev",
+    "test": "npm -w apps/api test"
+  }
+}

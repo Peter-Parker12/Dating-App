@@ -1,0 +1,8 @@
+node_modules
+.next
+dist
+.env
+deploy/.env
+uploads
+*.log
+.DS_Store

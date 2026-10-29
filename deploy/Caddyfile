@@ -1,0 +1,15 @@
+{
+	auto_https off
+}
+
+:2829 {
+	handle /api/* {
+		reverse_proxy api:4000
+	}
+	handle /socket.io/* {
+		reverse_proxy api:4000
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+}

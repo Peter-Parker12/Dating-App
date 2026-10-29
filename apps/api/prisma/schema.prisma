@@ -1,0 +1,149 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  CUSTOMER
+  TALENT
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum VerificationStatus {
+  NONE
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum BookingStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CANCELLED
+  COMPLETED
+}
+
+enum SosStatus {
+  OPEN
+  RESOLVED
+}
+
+model User {
+  id           String             @id @default(cuid())
+  email        String             @unique
+  passwordHash String
+  name         String
+  role         Role               @default(CUSTOMER)
+  locale       String             @default("vi")
+  status       UserStatus         @default(ACTIVE)
+  idStatus     VerificationStatus @default(NONE)
+  idImageKey   String?
+  selfieKey    String?
+  createdAt    DateTime           @default(now())
+
+  talent      TalentProfile?
+  saved       SavedTalent[]
+  asCustomer  Booking[]      @relation("customer")
+  asTalent    Booking[]      @relation("talent")
+  messages    Message[]
+  sosAlerts   SosAlert[]
+  acks        ConductAck[]
+}
+
+model TalentProfile {
+  userId      String   @id
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName String
+  gender      String
+  age         Int
+  bio         String   @default("")
+  heightCm    Int?
+  style       String   @default("")
+  languages   String[]
+  hourlyPrice Int
+  photos      String[]
+  activities  String[]
+  availability String  @default("")
+  published   Boolean  @default(true)
+
+  saves SavedTalent[]
+}
+
+model Activity {
+  slug   String @id
+  nameVi String
+  nameEn String
+}
+
+model SavedTalent {
+  userId   String
+  talentId String
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  talent   TalentProfile @relation(fields: [talentId], references: [userId], onDelete: Cascade)
+
+  @@id([userId, talentId])
+}
+
+model Booking {
+  id          String        @id @default(cuid())
+  customerId  String
+  talentId    String
+  customer    User          @relation("customer", fields: [customerId], references: [id])
+  talent      User          @relation("talent", fields: [talentId], references: [id])
+  activity    String
+  date        DateTime
+  startTime   String
+  hours       Int
+  place       String
+  note        String        @default("")
+  status      BookingStatus @default(PENDING)
+  createdAt   DateTime      @default(now())
+
+  messages Message[]
+  acks     ConductAck[]
+  sos      SosAlert[]
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  bookingId String
+  senderId  String
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  sender    User     @relation(fields: [senderId], references: [id])
+  body      String
+  flagged   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([bookingId, createdAt])
+}
+
+model SosAlert {
+  id        String    @id @default(cuid())
+  userId    String
+  bookingId String?
+  user      User      @relation(fields: [userId], references: [id])
+  booking   Booking?  @relation(fields: [bookingId], references: [id])
+  lat       Float?
+  lng       Float?
+  status    SosStatus @default(OPEN)
+  createdAt DateTime  @default(now())
+}
+
+model ConductAck {
+  id        String   @id @default(cuid())
+  userId    String
+  bookingId String
+  user      User     @relation(fields: [userId], references: [id])
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  signedAt  DateTime @default(now())
+}

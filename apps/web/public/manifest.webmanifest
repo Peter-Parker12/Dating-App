@@ -1,0 +1,9 @@
+{
+  "name": "Cùng Đi",
+  "short_name": "Cùng Đi",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fff1f2",
+  "theme_color": "#e11d48",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
