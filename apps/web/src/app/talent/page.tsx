@@ -62,7 +62,7 @@ export default function TalentDashboard() {
         <div className="flex flex-wrap gap-2">
           {acts.map((a) => (
             <button type="button" key={a.slug} onClick={() => toggleAct(a.slug)}
-              className={`rounded-full border px-3 py-1 text-xs font-medium ${f.activities.includes(a.slug) ? "border-brand-600 bg-brand-600 text-white" : "border-rose-200 bg-white"}`}>
+              className={`rounded-full border px-3 py-1 text-xs font-medium ${f.activities.includes(a.slug) ? "border-brand-600 bg-brand-600 text-white" : "border-line-strong bg-white"}`}>
               {locale === "vi" ? a.nameVi : a.nameEn}
             </button>
           ))}

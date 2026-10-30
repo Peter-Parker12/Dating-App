@@ -26,7 +26,7 @@ export default function Chat({ params }: { params: Promise<{ id: string }> }) {
   useEffect(() => { bottom.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs]);
 
   if (!me) return <p>{t("common.loading")}</p>;
-  if (locked) return <p className="text-slate-500">{t("chat.locked")}</p>;
+  if (locked) return <p className="text-muted">{t("chat.locked")}</p>;
 
   const send = async (e: FormEvent) => {
     e.preventDefault();
@@ -40,11 +40,11 @@ export default function Chat({ params }: { params: Promise<{ id: string }> }) {
   return (
     <div className="mx-auto flex h-[calc(100vh-11rem)] max-w-xl flex-col gap-3">
       <h1 className="text-xl font-bold">{t("chat.title")}</h1>
-      <p className="text-xs text-slate-500">{t("chat.masked")}</p>
+      <p className="text-xs text-muted">{t("chat.masked")}</p>
       <div className="card flex-1 space-y-2 overflow-y-auto">
         {msgs.map((m) => (
           <div key={m.id} className={`flex ${m.senderId === me.id ? "justify-end" : "justify-start"}`}>
-            <div className={`max-w-[80%] whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm ${m.senderId === me.id ? "bg-brand-600 text-white" : "bg-slate-100"}`}>{m.body}</div>
+            <div className={`max-w-[80%] whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm ${m.senderId === me.id ? "bg-brand-600 text-white" : "bg-brand-50"}`}>{m.body}</div>
           </div>
         ))}
         <div ref={bottom} />

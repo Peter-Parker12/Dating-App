@@ -27,7 +27,7 @@ export default function Profile() {
   return (
     <div className="mx-auto max-w-lg space-y-4">
       <h1 className="text-2xl font-bold">{t("profile.title")}</h1>
-      <div className="card text-sm"><div className="font-bold">{me.name}</div><div className="text-slate-500">{me.email}</div></div>
+      <div className="card text-sm"><div className="font-bold">{me.name}</div><div className="text-muted">{me.email}</div></div>
       {me.role !== "ADMIN" && (
         <div className="card space-y-3">
           <h2 className="font-bold">{t("profile.verify")}</h2>

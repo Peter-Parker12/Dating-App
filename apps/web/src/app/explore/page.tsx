@@ -4,6 +4,7 @@ import { api, type Activity, type Talent } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import TalentCard from "@/components/TalentCard";
+import { activityIcon } from "@/components/activityIcons";
 
 export default function Explore() {
   const { t, locale } = useI18n();
@@ -39,33 +40,44 @@ export default function Explore() {
   }, [saved]);
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold">{t("explore.title")}</h1>
-      <div className="card grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div><label className="label">{t("explore.search")}</label><input className="input" value={q} onChange={(e) => setQ(e.target.value)} /></div>
-        <div>
-          <label className="label">{t("explore.gender")}</label>
-          <select className="input" value={gender} onChange={(e) => setGender(e.target.value)}>
-            <option value="">{t("explore.all")}</option>
-            <option value="female">{t("explore.female")}</option>
-            <option value="male">{t("explore.male")}</option>
-            <option value="other">{t("explore.other")}</option>
-          </select>
+    <div className="space-y-5">
+      <div>
+        <h1 className="section-title">{t("explore.title")}</h1>
+        <p className="section-script">{t("explore.script")}</p>
+      </div>
+      <div className="card !p-5 space-y-4">
+        <div className="grid grid-cols-4 gap-2.5 sm:grid-cols-4 lg:grid-cols-8">
+          {[{ slug: "", label: t("explore.all") }, ...activities.map((a) => ({ slug: a.slug, label: locale === "vi" ? a.nameVi : a.nameEn }))].map((a) => {
+            const Icon = activityIcon(a.slug || "all");
+            const on = activity === a.slug;
+            return (
+              <button key={a.slug || "all"} onClick={() => setActivity(a.slug)}
+                className={`flex flex-col items-center justify-center gap-2 rounded-md border-[1.5px] px-1.5 py-3.5 text-center text-xs font-semibold leading-tight transition ${on ? "border-brand-500 bg-brand-500 text-white shadow-btn" : "border-line bg-white text-ink hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-sm"}`}>
+                <Icon size={22} className={on ? "text-white" : "text-brand-500"} />
+                {a.label}
+              </button>
+            );
+          })}
         </div>
-        <div>
-          <label className="label">{t("explore.activity")}</label>
-          <select className="input" value={activity} onChange={(e) => setActivity(e.target.value)}>
-            <option value="">{t("explore.all")}</option>
-            {activities.map((a) => <option key={a.slug} value={a.slug}>{locale === "vi" ? a.nameVi : a.nameEn}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="label">{t("explore.maxPrice")}</label>
-          <input className="input" type="number" min={0} step={10000} value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} />
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div><label className="label">{t("explore.search")}</label><input className="input" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+          <div>
+            <label className="label">{t("explore.gender")}</label>
+            <select className="input" value={gender} onChange={(e) => setGender(e.target.value)}>
+              <option value="">{t("explore.all")}</option>
+              <option value="female">{t("explore.female")}</option>
+              <option value="male">{t("explore.male")}</option>
+              <option value="other">{t("explore.other")}</option>
+            </select>
+          </div>
+          <div>
+            <label className="label">{t("explore.maxPrice")}</label>
+            <input className="input" type="number" min={0} step={10000} value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} />
+          </div>
         </div>
       </div>
-      {talents === null ? <p>{t("common.loading")}</p> : talents.length === 0 ? <p className="text-slate-500">{t("explore.empty")}</p> : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {talents === null ? <p>{t("common.loading")}</p> : talents.length === 0 ? <p className="text-muted">{t("explore.empty")}</p> : (
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-5">
           {talents.map((x) => (
             <TalentCard key={x.id} talent={x} saved={saved.has(x.id)} onToggleSave={me?.role === "CUSTOMER" ? () => void toggle(x.id) : undefined} />
           ))}

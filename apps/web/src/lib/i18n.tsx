@@ -57,6 +57,13 @@ const dict = {
     "auth.customer": "Khách hàng", "auth.talent": "Talent (bạn đồng hành)", "auth.submitLogin": "Đăng nhập", "auth.submitRegister": "Tạo tài khoản",
     "auth.error": "Có lỗi xảy ra, vui lòng thử lại.", "auth.badCreds": "Email hoặc mật khẩu không đúng.", "auth.taken": "Email đã được sử dụng.",
     "common.loading": "Đang tải...", "common.hours": "giờ",
+    "home.eyebrow": "Bạn đồng hành đã xác minh", "home.script": "Có người đi cùng, vui gấp đôi!",
+    "home.f1": "Đặt lịch hẹn", "home.f2": "Kết nối thật", "home.f3": "An toàn", "home.f4": "Đáng nhớ",
+    "home.stat1": "bạn đồng hành", "home.stat2": "hoạt động", "home.stat3": "cảnh báo SOS",
+    "home.cta2": "Xem an toàn", "home.steps": "3 bước", "home.stepsScript": "Đặt lịch hẹn dễ dàng",
+    "home.whyPre": "Vì sao chọn", "footer.script": "Hẹn những điều tốt đẹp hơn",
+    "footer.v1": "An toàn", "footer.v2": "Tôn trọng", "footer.v3": "Kết nối thật", "footer.v4": "Nhiều trải nghiệm", "footer.v5": "Cộng đồng tích cực",
+    "explore.script": "Tìm người đi cùng bạn", "explore.count": "bạn đồng hành",
   },
   en: {
     "brand": "Cùng Đi",
@@ -111,6 +118,13 @@ const dict = {
     "auth.customer": "Customer", "auth.talent": "Talent (companion)", "auth.submitLogin": "Log in", "auth.submitRegister": "Create account",
     "auth.error": "Something went wrong, please try again.", "auth.badCreds": "Wrong email or password.", "auth.taken": "Email already in use.",
     "common.loading": "Loading...", "common.hours": "h",
+    "home.eyebrow": "Verified companions", "home.script": "Good company makes everything better!",
+    "home.f1": "Book a date", "home.f2": "Real connections", "home.f3": "Safe", "home.f4": "Memorable",
+    "home.stat1": "companions", "home.stat2": "activities", "home.stat3": "SOS alert",
+    "home.cta2": "See how we keep you safe", "home.steps": "3 steps", "home.stepsScript": "Booking made easy",
+    "home.whyPre": "Why choose", "footer.script": "To better things together",
+    "footer.v1": "Safe", "footer.v2": "Respectful", "footer.v3": "Real connections", "footer.v4": "Many experiences", "footer.v5": "Positive community",
+    "explore.script": "Find someone to go with", "explore.count": "companions",
   },
 } as const;
 

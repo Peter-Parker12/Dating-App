@@ -39,7 +39,7 @@ export default function Admin() {
 
       <section className="space-y-3">
         <h2 className="text-lg font-bold">{t("admin.sos")}</h2>
-        {sos.length === 0 && <p className="text-slate-500">{t("admin.none")}</p>}
+        {sos.length === 0 && <p className="text-muted">{t("admin.none")}</p>}
         {sos.map((s) => (
           <div key={s.id} className={`card flex flex-wrap items-center justify-between gap-2 ${s.status === "OPEN" ? "border-red-300" : ""}`}>
             <div className="text-sm">
@@ -48,14 +48,14 @@ export default function Admin() {
                 <> · <a className="text-brand-600 underline" target="_blank" rel="noreferrer" href={`https://www.google.com/maps?q=${s.lat},${s.lng}`}>map</a></>
               )}
             </div>
-            {s.status === "OPEN" ? <button className="btn-primary !py-1.5" onClick={() => void resolve(s.id)}>{t("admin.resolve")}</button> : <span className="text-xs text-slate-500">✓</span>}
+            {s.status === "OPEN" ? <button className="btn-primary !py-1.5" onClick={() => void resolve(s.id)}>{t("admin.resolve")}</button> : <span className="text-xs text-muted">✓</span>}
           </div>
         ))}
       </section>
 
       <section className="space-y-3">
         <h2 className="text-lg font-bold">{t("admin.verifications")}</h2>
-        {pending.length === 0 && <p className="text-slate-500">{t("admin.none")}</p>}
+        {pending.length === 0 && <p className="text-muted">{t("admin.none")}</p>}
         {pending.map((p) => (
           <div key={p.id} className="card space-y-2">
             <div className="text-sm"><b>{p.name}</b> ({p.email}) · {p.role}</div>
@@ -75,7 +75,7 @@ export default function Admin() {
 
       <section className="space-y-3">
         <h2 className="text-lg font-bold">{t("admin.users")}</h2>
-        <div className="card divide-y divide-rose-100 !p-0">
+        <div className="card divide-y divide-line !p-0">
           {users.map((u) => (
             <div key={u.id} className="flex items-center justify-between gap-2 px-4 py-2 text-sm">
               <div className="min-w-0 truncate"><b>{u.name}</b> · {u.email} · {u.role}</div>

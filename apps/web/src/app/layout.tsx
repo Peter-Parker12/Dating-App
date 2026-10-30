@@ -5,6 +5,7 @@ import { I18nProvider } from "@/lib/i18n";
 import { AuthProvider } from "@/lib/auth";
 import Nav from "@/components/Nav";
 import SosButton from "@/components/SosButton";
+import Footer from "@/components/Footer";
 
 export const metadata: Metadata = {
   title: "Cùng Đi",
@@ -17,11 +18,20 @@ export const viewport: Viewport = { themeColor: "#e11d48", width: "device-width"
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="vi">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800;900&family=Dancing+Script:wght@600;700&display=swap&subset=vietnamese"
+        />
+      </head>
       <body>
         <I18nProvider>
           <AuthProvider>
             <Nav />
-            <main className="mx-auto max-w-5xl px-4 pb-28 pt-4 md:pb-10">{children}</main>
+            <main className="page-enter mx-auto max-w-6xl px-4 pb-10 pt-6 md:px-6">{children}</main>
+            <Footer />
             <SosButton />
           </AuthProvider>
         </I18nProvider>

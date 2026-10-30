@@ -18,7 +18,7 @@ export default function Bookings() {
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">{t("bookings.title")}</h1>
-      {items === null ? <p>{t("common.loading")}</p> : items.length === 0 ? <p className="text-slate-500">{t("bookings.empty")}</p> : items.map((b) => {
+      {items === null ? <p>{t("common.loading")}</p> : items.length === 0 ? <p className="text-muted">{t("bookings.empty")}</p> : items.map((b) => {
         const mine = me.id === b.customerId ? "customer" : "talent";
         const other = mine === "customer" ? (b.talent.talent?.displayName ?? b.talent.name) : b.customer.name;
         return (
@@ -27,8 +27,8 @@ export default function Bookings() {
               <div className="font-bold">{other}</div>
               <span className="rounded-full bg-brand-100 px-2 py-0.5 text-xs font-bold text-brand-700">{t(`status.${b.status}`)}</span>
             </div>
-            <div className="text-sm text-slate-600">{b.activity} · {new Date(b.date).toLocaleDateString()} {b.startTime} · {b.hours} {t("common.hours")} · {b.place}</div>
-            {b.note && <div className="text-xs text-slate-500">{b.note}</div>}
+            <div className="text-sm text-muted">{b.activity} · {new Date(b.date).toLocaleDateString()} {b.startTime} · {b.hours} {t("common.hours")} · {b.place}</div>
+            {b.note && <div className="text-xs text-muted">{b.note}</div>}
             <div className="flex flex-wrap gap-2">
               {mine === "talent" && b.status === "PENDING" && (<>
                 <button className="btn-primary !py-1.5" onClick={() => void act(b.id, "ACCEPTED")}>{t("bookings.accept")}</button>

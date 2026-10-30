@@ -15,7 +15,7 @@ export default function Saved() {
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">{t("saved.title")}</h1>
-      {items.length === 0 ? <p className="text-slate-500">{t("saved.empty")}</p> : (
+      {items.length === 0 ? <p className="text-muted">{t("saved.empty")}</p> : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {items.map((x) => <TalentCard key={x.id} talent={x} saved onToggleSave={() => void remove(x.id)} />)}
         </div>
