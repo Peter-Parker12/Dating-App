@@ -74,6 +74,9 @@ model TalentProfile {
   photos      String[]
   activities  String[]
   availability String  @default("")
+  district    String   @default("")
+  sticker     String   @default("")
+  availableNow Boolean @default(false)
   published   Boolean  @default(true)
 
   saves SavedTalent[]

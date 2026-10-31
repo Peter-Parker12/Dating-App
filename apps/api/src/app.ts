@@ -121,11 +121,12 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
   const publicTalent = (t: {
     userId: string; displayName: string; gender: string; age: number; bio: string; heightCm: number | null;
     style: string; languages: string[]; hourlyPrice: number; photos: string[]; activities: string[];
-    availability: string; user?: { idStatus: string };
+    availability: string; district: string; sticker: string; availableNow: boolean; user?: { idStatus: string };
   }) => ({
     id: t.userId, displayName: t.displayName, gender: t.gender, age: t.age, bio: t.bio, heightCm: t.heightCm,
     style: t.style, languages: t.languages, hourlyPrice: t.hourlyPrice, photos: t.photos,
-    activities: t.activities, availability: t.availability, verified: t.user?.idStatus === "APPROVED",
+    activities: t.activities, availability: t.availability, district: t.district,
+    sticker: t.sticker, availableNow: t.availableNow, verified: t.user?.idStatus === "APPROVED",
   });
 
   const listQuery = z.object({
@@ -172,6 +173,9 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     hourlyPrice: z.number().int().min(0).max(100_000_000),
     activities: z.array(z.string()).max(12).default([]),
     availability: z.string().max(300).default(""),
+    district: z.string().max(60).default(""),
+    sticker: z.string().max(40).default(""),
+    availableNow: z.boolean().default(false),
     published: z.boolean().default(true),
   });
   app.put("/api/talent/profile", { preHandler: auth }, async (req, reply) => {

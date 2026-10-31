@@ -36,7 +36,7 @@ export default function Home() {
             <Heart size={14} fill="currentColor" /> {t("home.eyebrow")}
           </span>
           <h1 className="mt-4 text-[clamp(2.6rem,5.4vw,4.2rem)] font-black leading-[1.05] tracking-[-0.035em]">
-            {t("brand")}
+            {t("brand").split(" ").slice(0, -1).join(" ")} <span className="text-brand-500">{t("brand").split(" ").slice(-1)}</span>
           </h1>
           <p className="my-2 origin-left -rotate-3 font-script text-[clamp(1.7rem,3vw,2.3rem)] font-bold text-brand-600">{t("home.script")}</p>
           <p className="max-w-xl text-[1.02rem]">{t("home.sub")}</p>

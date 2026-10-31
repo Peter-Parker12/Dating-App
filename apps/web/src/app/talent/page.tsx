@@ -12,7 +12,7 @@ export default function TalentDashboard() {
   const [acts, setActs] = useState<Activity[]>([]);
   const [f, setF] = useState({
     displayName: "", gender: "female", age: 20, bio: "", heightCm: "", style: "", languages: "",
-    hourlyPrice: 100000, activities: [] as string[], availability: "", published: true,
+    hourlyPrice: 100000, activities: [] as string[], availability: "", district: "", sticker: "", availableNow: false, published: true,
   });
   const [msg, setMsg] = useState("");
 
@@ -23,7 +23,7 @@ export default function TalentDashboard() {
     setF((cur) => p ? {
       displayName: p.displayName, gender: p.gender, age: p.age, bio: p.bio, heightCm: p.heightCm ? String(p.heightCm) : "",
       style: p.style, languages: p.languages.join(", "), hourlyPrice: p.hourlyPrice, activities: p.activities,
-      availability: p.availability, published: p.published,
+      availability: p.availability, district: p.district, sticker: p.sticker, availableNow: p.availableNow, published: p.published,
     } : { ...cur, displayName: me.name });
   }, [me]);
   if (!me) return <p>{t("common.loading")}</p>;
@@ -56,6 +56,11 @@ export default function TalentDashboard() {
       <div><label className="label">{t("talent.style")}</label><input className="input" value={f.style} onChange={(e) => setF({ ...f, style: e.target.value })} /></div>
       <div><label className="label">{t("talentdash.langs")}</label><input className="input" value={f.languages} onChange={(e) => setF({ ...f, languages: e.target.value })} /></div>
       <div><label className="label">{t("talentdash.price")}</label><input type="number" min={0} step={10000} className="input" value={f.hourlyPrice} onChange={(e) => setF({ ...f, hourlyPrice: Number(e.target.value) })} /></div>
+      <div className="grid grid-cols-2 gap-3">
+        <div><label className="label">{t("talentdash.district")}</label><input maxLength={60} className="input" value={f.district} onChange={(e) => setF({ ...f, district: e.target.value })} /></div>
+        <div><label className="label">{t("talentdash.sticker")}</label><input maxLength={40} className="input" value={f.sticker} onChange={(e) => setF({ ...f, sticker: e.target.value })} /></div>
+      </div>
+      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={f.availableNow} onChange={(e) => setF({ ...f, availableNow: e.target.checked })} />{t("talentdash.now")}</label>
       <div><label className="label">{t("talent.availability")}</label><input className="input" value={f.availability} onChange={(e) => setF({ ...f, availability: e.target.value })} /></div>
       <div>
         <div className="label">{t("talent.activities")}</div>

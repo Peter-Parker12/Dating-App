@@ -22,7 +22,7 @@ export const vnd = (n: number) => `${n.toLocaleString("vi-VN")}đ`;
 export interface Talent {
   id: string; displayName: string; gender: string; age: number; bio: string; heightCm: number | null;
   style: string; languages: string[]; hourlyPrice: number; photos: string[]; activities: string[];
-  availability: string; verified: boolean;
+  availability: string; district: string; sticker: string; availableNow: boolean; verified: boolean;
 }
 export interface Activity { slug: string; nameVi: string; nameEn: string }
 export interface Booking {

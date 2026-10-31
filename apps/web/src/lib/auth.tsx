@@ -7,7 +7,7 @@ export interface Me {
   idStatus: "NONE" | "PENDING" | "APPROVED" | "REJECTED";
   talent: null | {
     displayName: string; gender: string; age: number; bio: string; heightCm: number | null; style: string;
-    languages: string[]; hourlyPrice: number; activities: string[]; availability: string; published: boolean;
+    languages: string[]; hourlyPrice: number; activities: string[]; availability: string; district: string; sticker: string; availableNow: boolean; published: boolean;
   };
 }
 

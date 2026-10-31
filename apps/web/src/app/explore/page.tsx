@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { Heart, RotateCcw, Search } from "lucide-react";
 import { api, type Activity, type Talent } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
@@ -33,6 +34,8 @@ export default function Explore() {
     return () => clearTimeout(h);
   }, [gender, activity, maxPrice, q]);
 
+  const actLabel = (slug: string) => { const a = activities.find((x) => x.slug === slug); return a ? (locale === "vi" ? a.nameVi : a.nameEn) : slug; };
+
   const toggle = useCallback(async (id: string) => {
     const has = saved.has(id);
     await api(`/saved/${id}`, { method: has ? "DELETE" : "PUT" });
@@ -41,11 +44,11 @@ export default function Explore() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="section-title">{t("explore.title")}</h1>
-        <p className="section-script">{t("explore.script")}</p>
-      </div>
       <div className="card !p-5 space-y-4">
+        <div>
+          <h1 className="section-title">{t("explore.pick")} <span>{t("explore.pickHi")}</span></h1>
+          <p className="text-sm text-muted">{t("explore.pickSub")}</p>
+        </div>
         <div className="grid grid-cols-4 gap-2.5 sm:grid-cols-4 lg:grid-cols-8">
           {[{ slug: "", label: t("explore.all") }, ...activities.map((a) => ({ slug: a.slug, label: locale === "vi" ? a.nameVi : a.nameEn }))].map((a) => {
             const Icon = activityIcon(a.slug || "all");
@@ -59,8 +62,14 @@ export default function Explore() {
             );
           })}
         </div>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <div><label className="label">{t("explore.search")}</label><input className="input" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+        <div className="grid items-end gap-3 sm:grid-cols-[2fr_1fr_1fr_auto]">
+          <div>
+            <label className="label">{t("explore.search")}</label>
+            <div className="relative">
+              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-brand-300" />
+              <input className="input !pl-9" placeholder={t("explore.searchPh")} value={q} onChange={(e) => setQ(e.target.value)} />
+            </div>
+          </div>
           <div>
             <label className="label">{t("explore.gender")}</label>
             <select className="input" value={gender} onChange={(e) => setGender(e.target.value)}>
@@ -74,12 +83,26 @@ export default function Explore() {
             <label className="label">{t("explore.maxPrice")}</label>
             <input className="input" type="number" min={0} step={10000} value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} />
           </div>
+          <button className="btn-ghost" onClick={() => { setQ(""); setGender(""); setActivity(""); setMaxPrice(""); }}>
+            <RotateCcw size={15} /> {t("explore.reset")}
+          </button>
         </div>
+      </div>
+      <div className="flex flex-wrap gap-2.5">
+        <span className="inline-flex items-center gap-2 rounded-full bg-ink px-4 py-2 text-sm font-bold text-white">
+          <Heart size={15} fill="currentColor" /> {t("explore.tabAll")}
+          <span className="rounded-full bg-brand-500 px-2 text-xs font-extrabold">{talents?.length ?? 0}</span>
+        </span>
+        {me?.role === "CUSTOMER" && (
+          <a href="/saved" className="inline-flex items-center gap-2 rounded-full border border-line bg-white px-4 py-2 text-sm font-bold text-muted hover:border-brand-200 hover:text-brand-600">
+            {t("nav.saved")} <span className="rounded-full bg-brand-100 px-2 text-xs font-extrabold text-brand-600">{saved.size}</span>
+          </a>
+        )}
       </div>
       {talents === null ? <p>{t("common.loading")}</p> : talents.length === 0 ? <p className="text-muted">{t("explore.empty")}</p> : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-5">
           {talents.map((x) => (
-            <TalentCard key={x.id} talent={x} saved={saved.has(x.id)} onToggleSave={me?.role === "CUSTOMER" ? () => void toggle(x.id) : undefined} />
+            <TalentCard key={x.id} talent={x} actLabel={actLabel} saved={saved.has(x.id)} onToggleSave={me?.role === "CUSTOMER" ? () => void toggle(x.id) : undefined} />
           ))}
         </div>
       )}
