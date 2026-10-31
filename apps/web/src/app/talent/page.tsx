@@ -25,7 +25,7 @@ export default function TalentDashboard() {
       displayName: p.displayName, gender: p.gender, age: p.age, bio: p.bio, heightCm: p.heightCm ? String(p.heightCm) : "",
       style: p.style, languages: p.languages.join(", "), hourlyPrice: p.hourlyPrice, activities: p.activities,
       availability: p.availability, district: p.district, sticker: p.sticker, availableNow: p.availableNow, published: p.published,
-    } : { ...cur, displayName: me.name });
+    } : { ...cur, displayName: me.name, gender: me.gender ?? cur.gender });
   }, [me]);
   if (!me) return <p>{t("common.loading")}</p>;
 

@@ -44,6 +44,7 @@ model User {
   passwordHash String
   name         String
   role         Role               @default(CUSTOMER)
+  gender       String?
   locale       String             @default("vi")
   status       UserStatus         @default(ACTIVE)
   idStatus     VerificationStatus @default(NONE)

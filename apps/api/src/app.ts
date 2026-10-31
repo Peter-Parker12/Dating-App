@@ -66,8 +66,8 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
       maxAge: 7 * 24 * 3600,
     });
 
-  const publicUser = (u: { id: string; email: string; name: string; role: string; locale: string; idStatus: string }) => ({
-    id: u.id, email: u.email, name: u.name, role: u.role, locale: u.locale, idStatus: u.idStatus,
+  const publicUser = (u: { id: string; email: string; name: string; role: string; gender: string | null; locale: string; idStatus: string }) => ({
+    id: u.id, email: u.email, name: u.name, role: u.role, gender: u.gender, locale: u.locale, idStatus: u.idStatus,
   });
 
   app.get("/api/health", async () => ({ ok: true }));
@@ -77,7 +77,7 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     email: z.string().email().toLowerCase(),
     password: z.string().min(8).max(128),
     name: z.string().trim().min(1).max(80),
-    role: z.enum(["CUSTOMER", "TALENT"]).default("CUSTOMER"),
+    gender: z.enum(["female", "male"]),
     locale: z.enum(["vi", "en"]).default("vi"),
   });
   app.post("/api/auth/register", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req, reply) => {
@@ -87,7 +87,9 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
       return reply.code(409).send({ error: "email_taken" });
     const user = await prisma.user.create({
       data: {
-        email: p.data.email, name: p.data.name, role: p.data.role, locale: p.data.locale,
+        email: p.data.email, name: p.data.name, gender: p.data.gender, locale: p.data.locale,
+        // Women sign up as customers, men as talents; the role is never taken from the client.
+        role: p.data.gender === "female" ? "CUSTOMER" : "TALENT",
         passwordHash: await argon2.hash(p.data.password),
       },
     });

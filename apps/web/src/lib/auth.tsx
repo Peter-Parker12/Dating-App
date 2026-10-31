@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import { api } from "./api";
 
 export interface Me {
-  id: string; email: string; name: string; role: "CUSTOMER" | "TALENT" | "ADMIN"; locale: string;
+  id: string; email: string; name: string; role: "CUSTOMER" | "TALENT" | "ADMIN"; gender: string | null; locale: string;
   idStatus: "NONE" | "PENDING" | "APPROVED" | "REJECTED";
   talent: null | {
     displayName: string; gender: string; age: number; bio: string; heightCm: number | null; style: string;
