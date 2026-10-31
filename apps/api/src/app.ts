@@ -13,6 +13,7 @@ import type { Server as IOServer } from "socket.io";
 import { prisma } from "./db.js";
 import { maskContacts } from "./mask.js";
 import { actorFor, canTransition, chatOpen } from "./bookingRules.js";
+import { averageRating, canReviewBooking, ratingBreakdown, withinEditWindow } from "./reviewRules.js";
 
 export const UPLOAD_DIR = process.env.UPLOAD_DIR ?? path.resolve("uploads");
 const COOKIE = "session";
@@ -121,12 +122,12 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
   const publicTalent = (t: {
     userId: string; displayName: string; gender: string; age: number; bio: string; heightCm: number | null;
     style: string; languages: string[]; hourlyPrice: number; photos: string[]; activities: string[];
-    availability: string; district: string; sticker: string; availableNow: boolean; user?: { idStatus: string };
+    availability: string; district: string; sticker: string; availableNow: boolean; ratingAvg: number; ratingCount: number; user?: { idStatus: string };
   }) => ({
     id: t.userId, displayName: t.displayName, gender: t.gender, age: t.age, bio: t.bio, heightCm: t.heightCm,
     style: t.style, languages: t.languages, hourlyPrice: t.hourlyPrice, photos: t.photos,
     activities: t.activities, availability: t.availability, district: t.district,
-    sticker: t.sticker, availableNow: t.availableNow, verified: t.user?.idStatus === "APPROVED",
+    sticker: t.sticker, availableNow: t.availableNow, ratingAvg: t.ratingAvg, ratingCount: t.ratingCount, verified: t.user?.idStatus === "APPROVED",
   });
 
   const listQuery = z.object({
@@ -135,11 +136,13 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     maxPrice: z.coerce.number().int().min(0).optional(),
     activity: z.string().optional(),
     q: z.string().max(60).optional(),
+    minRating: z.coerce.number().min(0).max(5).optional(),
+    sort: z.enum(["name", "rating"]).optional(),
   });
   app.get("/api/talents", async (req, reply) => {
     const p = listQuery.safeParse(req.query);
     if (!p.success) return reply.code(400).send({ error: "invalid" });
-    const { gender, minPrice, maxPrice, activity, q } = p.data;
+    const { gender, minPrice, maxPrice, activity, q, minRating, sort } = p.data;
     const rows = await prisma.talentProfile.findMany({
       where: {
         published: true,
@@ -147,10 +150,11 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
         ...(gender ? { gender } : {}),
         ...(activity ? { activities: { has: activity } } : {}),
         ...(q ? { displayName: { contains: q, mode: "insensitive" as const } } : {}),
+        ...(minRating ? { ratingAvg: { gte: minRating }, ratingCount: { gt: 0 } } : {}),
         hourlyPrice: { gte: minPrice ?? 0, ...(maxPrice !== undefined ? { lte: maxPrice } : {}) },
       },
       include: { user: { select: { idStatus: true } } },
-      orderBy: { displayName: "asc" },
+      orderBy: sort === "rating" ? [{ ratingAvg: "desc" }, { ratingCount: "desc" }, { displayName: "asc" }] : { displayName: "asc" },
     });
     return rows.map(publicTalent);
   });
@@ -242,6 +246,7 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
   });
 
   const bookingInclude = {
+    review: { select: { id: true, rating: true, comment: true, createdAt: true } },
     customer: { select: { id: true, name: true } },
     talent: { select: { id: true, name: true, talent: { select: { displayName: true, photos: true } } } },
   } as const;
@@ -292,6 +297,93 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     });
     getIO()?.to(`booking:${id}`).emit("message", msg);
     return msg;
+  });
+
+  // ---------- reviews ----------
+  async function recalcRating(talentId: string) {
+    const rows = await prisma.review.findMany({ where: { talentId, hidden: false }, select: { rating: true } });
+    const { avg, count } = averageRating(rows.map((r) => r.rating));
+    await prisma.talentProfile.update({ where: { userId: talentId }, data: { ratingAvg: avg, ratingCount: count } });
+  }
+
+  const reviewBody = z.object({
+    rating: z.number().int().min(1).max(5),
+    comment: z.string().trim().max(500).default(""),
+  });
+
+  app.post("/api/bookings/:id/review", { preHandler: auth, config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const p = reviewBody.safeParse(req.body);
+    if (!p.success) return reply.code(400).send({ error: "invalid", issues: p.error.issues });
+    const b = await prisma.booking.findUnique({ where: { id }, include: { review: true } });
+    if (!b || b.customerId !== req.user.id) return reply.code(404).send({ error: "not_found" });
+    if (!canReviewBooking(b.status)) return reply.code(409).send({ error: "booking_not_completed" });
+    if (b.review) return reply.code(409).send({ error: "already_reviewed" });
+    const review = await prisma.review.create({
+      data: { bookingId: id, talentId: b.talentId, customerId: req.user.id, rating: p.data.rating, comment: maskContacts(p.data.comment).text },
+    });
+    await recalcRating(b.talentId);
+    return review;
+  });
+
+  app.put("/api/reviews/:id", { preHandler: auth }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const p = reviewBody.safeParse(req.body);
+    if (!p.success) return reply.code(400).send({ error: "invalid", issues: p.error.issues });
+    const r = await prisma.review.findUnique({ where: { id } });
+    if (!r || r.customerId !== req.user.id) return reply.code(404).send({ error: "not_found" });
+    if (!withinEditWindow(r.createdAt)) return reply.code(403).send({ error: "edit_window_closed" });
+    const updated = await prisma.review.update({
+      where: { id }, data: { rating: p.data.rating, comment: maskContacts(p.data.comment).text },
+    });
+    await recalcRating(r.talentId);
+    return updated;
+  });
+
+  app.post("/api/reviews/:id/reply", { preHandler: auth, config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const p = z.object({ reply: z.string().trim().min(1).max(500) }).safeParse(req.body);
+    if (!p.success) return reply.code(400).send({ error: "invalid" });
+    const r = await prisma.review.findUnique({ where: { id } });
+    if (!r || r.talentId !== req.user.id) return reply.code(404).send({ error: "not_found" });
+    if (r.reply) return reply.code(409).send({ error: "already_replied" });
+    return prisma.review.update({ where: { id }, data: { reply: maskContacts(p.data.reply).text, repliedAt: new Date() } });
+  });
+
+  app.get("/api/talents/:id/reviews", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const q = z.object({ page: z.coerce.number().int().min(1).default(1) }).safeParse(req.query);
+    if (!q.success) return reply.code(400).send({ error: "invalid" });
+    const where = { talentId: id, hidden: false };
+    const [rows, all] = await Promise.all([
+      prisma.review.findMany({
+        where, orderBy: { createdAt: "desc" }, skip: (q.data.page - 1) * 10, take: 10,
+        include: { customer: { select: { name: true } } },
+      }),
+      prisma.review.findMany({ where, select: { rating: true } }),
+    ]);
+    const ratings = all.map((r) => r.rating);
+    return {
+      ...averageRating(ratings),
+      breakdown: ratingBreakdown(ratings),
+      reviews: rows.map((r) => ({
+        id: r.id, rating: r.rating, comment: r.comment, reply: r.reply, repliedAt: r.repliedAt,
+        createdAt: r.createdAt, author: r.customer.name.trim().split(/\s+/).pop() ?? "",
+      })),
+    };
+  });
+
+  app.post("/api/reviews/:id/report", { preHandler: auth, config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const p = z.object({ reason: z.string().trim().max(200).default("") }).safeParse(req.body ?? {});
+    if (!p.success) return reply.code(400).send({ error: "invalid" });
+    const r = await prisma.review.findUnique({ where: { id } });
+    if (!r || r.hidden) return reply.code(404).send({ error: "not_found" });
+    await prisma.reviewReport.upsert({
+      where: { reviewId_userId: { reviewId: id, userId: req.user.id } },
+      create: { reviewId: id, userId: req.user.id, reason: p.data.reason }, update: { reason: p.data.reason },
+    });
+    return { ok: true };
   });
 
   // ---------- ID verification ----------
@@ -373,6 +465,32 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
   app.post("/api/admin/sos/:id/resolve", { preHandler: adminOnly }, async (req) => {
     const { id } = req.params as { id: string };
     return prisma.sosAlert.update({ where: { id }, data: { status: "RESOLVED" } });
+  });
+
+  app.get("/api/admin/reviews", { preHandler: adminOnly }, async () => {
+    const rows = await prisma.review.findMany({
+      where: { OR: [{ reports: { some: {} } }, { hidden: true }] },
+      include: {
+        customer: { select: { name: true, email: true } },
+        talent: { select: { displayName: true } },
+        reports: { select: { reason: true } },
+      },
+      orderBy: { createdAt: "desc" }, take: 100,
+    });
+    return rows.map((r) => ({
+      id: r.id, rating: r.rating, comment: r.comment, hidden: r.hidden, createdAt: r.createdAt,
+      customer: r.customer, talent: r.talent.displayName, reports: r.reports.map((x) => x.reason),
+    }));
+  });
+  app.post("/api/admin/reviews/:id/hidden", { preHandler: adminOnly }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const p = z.object({ hidden: z.boolean() }).safeParse(req.body);
+    if (!p.success) return reply.code(400).send({ error: "invalid" });
+    const r = await prisma.review.findUnique({ where: { id } });
+    if (!r) return reply.code(404).send({ error: "not_found" });
+    await prisma.review.update({ where: { id }, data: { hidden: p.data.hidden } });
+    await recalcRating(r.talentId);
+    return { ok: true };
   });
 
   app.get("/api/admin/users", { preHandler: adminOnly }, async () =>

@@ -17,6 +17,8 @@ export default function Explore() {
   const [activity, setActivity] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
   const [q, setQ] = useState("");
+  const [minRating, setMinRating] = useState("");
+  const [sort, setSort] = useState("name");
 
   useEffect(() => { void api<Activity[]>("/activities").then(setActivities).catch(() => {}); }, []);
   useEffect(() => {
@@ -30,9 +32,11 @@ export default function Explore() {
     if (activity) params.set("activity", activity);
     if (maxPrice) params.set("maxPrice", maxPrice);
     if (q) params.set("q", q);
+    if (minRating) params.set("minRating", minRating);
+    if (sort === "rating") params.set("sort", "rating");
     const h = setTimeout(() => void api<Talent[]>(`/talents?${params}`).then(setTalents).catch(() => setTalents([])), 200);
     return () => clearTimeout(h);
-  }, [gender, activity, maxPrice, q]);
+  }, [gender, activity, maxPrice, q, minRating, sort]);
 
   const actLabel = (slug: string) => { const a = activities.find((x) => x.slug === slug); return a ? (locale === "vi" ? a.nameVi : a.nameEn) : slug; };
 
@@ -62,7 +66,7 @@ export default function Explore() {
             );
           })}
         </div>
-        <div className="grid items-end gap-3 sm:grid-cols-[2fr_1fr_1fr_auto]">
+        <div className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1fr_1fr_auto]">
           <div>
             <label className="label">{t("explore.search")}</label>
             <div className="relative">
@@ -83,7 +87,19 @@ export default function Explore() {
             <label className="label">{t("explore.maxPrice")}</label>
             <input className="input" type="number" min={0} step={10000} value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} />
           </div>
-          <button className="btn-ghost" onClick={() => { setQ(""); setGender(""); setActivity(""); setMaxPrice(""); }}>
+          <div>
+            <label className="label">{t("rev.minRating")}</label>
+            <select className="input" value={minRating} onChange={(e) => setMinRating(e.target.value)}>
+              <option value="">{t("rev.any")}</option><option value="4.5">4.5+ ★</option><option value="4">4+ ★</option><option value="3">3+ ★</option>
+            </select>
+          </div>
+          <div>
+            <label className="label">{t("rev.sort")}</label>
+            <select className="input" value={sort} onChange={(e) => setSort(e.target.value)}>
+              <option value="name">{t("rev.sortName")}</option><option value="rating">{t("rev.sortRating")}</option>
+            </select>
+          </div>
+          <button className="btn-ghost" onClick={() => { setQ(""); setGender(""); setActivity(""); setMaxPrice(""); setMinRating(""); setSort("name"); }}>
             <RotateCcw size={15} /> {t("explore.reset")}
           </button>
         </div>

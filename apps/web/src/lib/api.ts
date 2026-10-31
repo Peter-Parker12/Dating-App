@@ -22,13 +22,18 @@ export const vnd = (n: number) => `${n.toLocaleString("vi-VN")}đ`;
 export interface Talent {
   id: string; displayName: string; gender: string; age: number; bio: string; heightCm: number | null;
   style: string; languages: string[]; hourlyPrice: number; photos: string[]; activities: string[];
-  availability: string; district: string; sticker: string; availableNow: boolean; verified: boolean;
+  availability: string; district: string; sticker: string; availableNow: boolean; ratingAvg: number; ratingCount: number; verified: boolean;
 }
 export interface Activity { slug: string; nameVi: string; nameEn: string }
 export interface Booking {
   id: string; customerId: string; talentId: string; activity: string; date: string; startTime: string;
   hours: number; place: string; note: string; status: "PENDING" | "ACCEPTED" | "DECLINED" | "CANCELLED" | "COMPLETED";
+  review: { id: string; rating: number; comment: string; createdAt: string } | null;
   customer: { id: string; name: string };
   talent: { id: string; name: string; talent: { displayName: string } | null };
 }
 export interface Message { id: string; bookingId: string; senderId: string; body: string; flagged: boolean; createdAt: string }
+export interface ReviewItem {
+  id: string; rating: number; comment: string; reply: string | null; repliedAt: string | null; createdAt: string; author: string;
+}
+export interface ReviewSummary { avg: number; count: number; breakdown: number[]; reviews: ReviewItem[] }

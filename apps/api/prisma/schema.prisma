@@ -54,6 +54,8 @@ model User {
   talent      TalentProfile?
   saved       SavedTalent[]
   asCustomer  Booking[]      @relation("customer")
+  reviewsWritten Review[]    @relation("reviewer")
+  reviewReports  ReviewReport[]
   asTalent    Booking[]      @relation("talent")
   messages    Message[]
   sosAlerts   SosAlert[]
@@ -78,8 +80,11 @@ model TalentProfile {
   sticker     String   @default("")
   availableNow Boolean @default(false)
   published   Boolean  @default(true)
+  ratingAvg   Float    @default(0)
+  ratingCount Int      @default(0)
 
-  saves SavedTalent[]
+  saves   SavedTalent[]
+  reviews Review[]
 }
 
 model Activity {
@@ -115,6 +120,7 @@ model Booking {
   messages Message[]
   acks     ConductAck[]
   sos      SosAlert[]
+  review   Review?
 }
 
 model Message {
@@ -149,4 +155,35 @@ model ConductAck {
   user      User     @relation(fields: [userId], references: [id])
   booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   signedAt  DateTime @default(now())
+}
+
+model Review {
+  id         String         @id @default(cuid())
+  bookingId  String         @unique
+  talentId   String
+  customerId String
+  booking    Booking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  talent     TalentProfile  @relation(fields: [talentId], references: [userId], onDelete: Cascade)
+  customer   User           @relation("reviewer", fields: [customerId], references: [id])
+  rating     Int
+  comment    String         @default("")
+  reply      String?
+  repliedAt  DateTime?
+  hidden     Boolean        @default(false)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  reports    ReviewReport[]
+
+  @@index([talentId, createdAt])
+}
+
+model ReviewReport {
+  reviewId  String
+  userId    String
+  review    Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id])
+  reason    String   @default("")
+  createdAt DateTime @default(now())
+
+  @@id([reviewId, userId])
 }

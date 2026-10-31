@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { BadgeCheck, Heart, MapPin } from "lucide-react";
+import { BadgeCheck, Heart, MapPin, Star } from "lucide-react";
 import { vnd, type Talent } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 
@@ -40,6 +40,12 @@ export default function TalentCard({ talent, saved, onToggleSave, actLabel = (a:
         </Link>
         <div className="mb-2 mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted">
           <span className="inline-flex items-center gap-1"><MapPin size={12} className="text-brand-400" />{talent.district || talent.style || "-"}</span>
+          {talent.ratingCount > 0 && (
+            <span className="inline-flex items-center gap-1">
+              <Star size={12} fill="currentColor" className="text-gold" />
+              <b className="text-ink">{talent.ratingAvg.toFixed(2)}</b> ({talent.ratingCount})
+            </span>
+          )}
         </div>
         <p className="mb-2.5 line-clamp-2 text-sm">“{talent.bio}”</p>
         <div className="mb-3.5 flex flex-wrap gap-1.5">

@@ -7,6 +7,7 @@ import { useRequireAuth } from "@/lib/useRequireAuth";
 
 interface Pending { id: string; name: string; email: string; role: string }
 interface Sos { id: string; lat: number | null; lng: number | null; status: "OPEN" | "RESOLVED"; createdAt: string; user: { name: string; email: string } }
+interface AdminReview { id: string; rating: number; comment: string; hidden: boolean; talent: string; customer: { name: string; email: string }; reports: string[] }
 interface AdminUser { id: string; name: string; email: string; role: string; status: "ACTIVE" | "SUSPENDED"; idStatus: string }
 
 export default function Admin() {
@@ -15,10 +16,11 @@ export default function Admin() {
   const [pending, setPending] = useState<Pending[]>([]);
   const [sos, setSos] = useState<Sos[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [reviews, setReviews] = useState<AdminReview[]>([]);
 
   const load = useCallback(async () => {
-    const [p, s, u] = await Promise.all([api<Pending[]>("/admin/verifications"), api<Sos[]>("/admin/sos"), api<AdminUser[]>("/admin/users")]);
-    setPending(p); setSos(s); setUsers(u);
+    const [p, s, u, r] = await Promise.all([api<Pending[]>("/admin/verifications"), api<Sos[]>("/admin/sos"), api<AdminUser[]>("/admin/users"), api<AdminReview[]>("/admin/reviews")]);
+    setPending(p); setSos(s); setUsers(u); setReviews(r);
   }, []);
   useEffect(() => {
     if (!me) return;
@@ -31,6 +33,7 @@ export default function Admin() {
 
   const review = async (id: string, approve: boolean) => { await api(`/admin/verifications/${id}`, { method: "POST", json: { approve } }); await load(); };
   const resolve = async (id: string) => { await api(`/admin/sos/${id}/resolve`, { method: "POST" }); await load(); };
+  const setHidden = async (id: string, hidden: boolean) => { await api(`/admin/reviews/${id}/hidden`, { method: "POST", json: { hidden } }); await load(); };
   const setStatus = async (id: string, status: string) => { await api(`/admin/users/${id}/status`, { method: "POST", json: { status } }); await load(); };
 
   return (
@@ -69,6 +72,21 @@ export default function Admin() {
               <button className="btn-primary !py-1.5" onClick={() => void review(p.id, true)}>{t("admin.approve")}</button>
               <button className="btn-ghost !py-1.5" onClick={() => void review(p.id, false)}>{t("admin.reject")}</button>
             </div>
+          </div>
+        ))}
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-lg font-bold">{t("admin.reviews")}</h2>
+        {reviews.length === 0 && <p className="text-muted">{t("admin.none")}</p>}
+        {reviews.map((r) => (
+          <div key={r.id} className="card flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0 text-sm">
+              <b>{r.talent}</b> · {r.rating}★ · {r.customer.name} ({r.customer.email})
+              <p className="mt-1">{r.comment || "-"}</p>
+              {r.reports.length > 0 && <p className="mt-1 text-xs text-red-600">⚑ {r.reports.length}: {r.reports.filter(Boolean).join("; ")}</p>}
+            </div>
+            <button className="btn-ghost !py-1.5" onClick={() => void setHidden(r.id, !r.hidden)}>{r.hidden ? t("admin.unhide") : t("admin.hide")}</button>
           </div>
         ))}
       </section>

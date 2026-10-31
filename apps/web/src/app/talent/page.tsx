@@ -4,6 +4,7 @@ import { api, type Activity } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import { useRequireAuth } from "@/lib/useRequireAuth";
+import ReviewList from "@/components/ReviewList";
 
 export default function TalentDashboard() {
   const { t, locale } = useI18n();
@@ -41,7 +42,8 @@ export default function TalentDashboard() {
   const toggleAct = (slug: string) => setF((c) => ({ ...c, activities: c.activities.includes(slug) ? c.activities.filter((s) => s !== slug) : [...c.activities, slug] }));
 
   return (
-    <form onSubmit={(e) => void save(e)} className="card mx-auto max-w-lg space-y-3">
+    <div className="mx-auto max-w-lg space-y-6">
+    <form onSubmit={(e) => void save(e)} className="card space-y-3">
       <h1 className="text-2xl font-bold">{t("talentdash.title")}</h1>
       <div><label className="label">{t("talentdash.name")}</label><input required className="input" value={f.displayName} onChange={(e) => setF({ ...f, displayName: e.target.value })} /></div>
       <div className="grid grid-cols-3 gap-3">
@@ -77,5 +79,7 @@ export default function TalentDashboard() {
       {msg && <p className="text-sm text-brand-700">{msg}</p>}
       <button className="btn-primary w-full">{t("talentdash.save")}</button>
     </form>
+    {me.talent && <div className="card"><h2 className="mb-2 text-sm font-bold text-muted">{t("rev.mine")}</h2><ReviewList talentId={me.id} /></div>}
+    </div>
   );
 }

@@ -3,12 +3,15 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { api, type Booking } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
+import ReviewForm from "@/components/ReviewForm";
+import { Stars } from "@/components/Stars";
 import { useRequireAuth } from "@/lib/useRequireAuth";
 
 export default function Bookings() {
   const { t } = useI18n();
   const { me } = useRequireAuth();
   const [items, setItems] = useState<Booking[] | null>(null);
+  const [reviewing, setReviewing] = useState<string | null>(null);
   const load = useCallback(() => api<Booking[]>("/bookings").then(setItems).catch(() => setItems([])), []);
   useEffect(() => { if (me) void load(); }, [me, load]);
   if (!me) return <p>{t("common.loading")}</p>;
@@ -42,7 +45,12 @@ export default function Bookings() {
                 <button className="btn-ghost !py-1.5" onClick={() => void act(b.id, "COMPLETED")}>{t("bookings.complete")}</button>
               </>)}
               {b.status === "COMPLETED" && <Link href={`/chat/${b.id}`} className="btn-ghost !py-1.5">{t("bookings.chat")}</Link>}
+              {b.status === "COMPLETED" && mine === "customer" && reviewing !== b.id && (
+                <button className="btn-soft !py-1.5" onClick={() => setReviewing(b.id)}>{b.review ? t("rev.edit") : t("rev.write")}</button>
+              )}
             </div>
+            {b.review && reviewing !== b.id && <div className="flex items-center gap-2 text-xs text-muted"><Stars value={b.review.rating} /> {t("rev.reviewed")}</div>}
+            {reviewing === b.id && <ReviewForm booking={b} onDone={() => { setReviewing(null); void load(); }} />}
           </div>
         );
       })}
