@@ -11,7 +11,7 @@ Stack: Next.js (apps/web), Fastify + Prisma + Socket.IO (apps/api), Postgres.
 npm install
 export DATABASE_URL=postgresql://user@localhost:5432/cungdi
 npm -w apps/api exec prisma migrate dev
-SEED_DEMO=true npm -w apps/api run db:seed   # admin@cungdi.local / change-me-admin + demo talents
+DEMO_PASSWORD=demo12345 npm -w apps/api run db:seed   # admin@cungdi.local / change-me-admin + 41 demo talents
 npm run dev:api    # :4000
 npm run dev:web    # :3000 (proxies /api and /socket.io to the API)
 npm test

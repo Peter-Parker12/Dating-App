@@ -27,7 +27,8 @@ services:
       COOKIE_SECURE: "true"
       ADMIN_EMAIL: ${ADMIN_EMAIL:?set ADMIN_EMAIL in .env}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
-      SEED_DEMO: ${SEED_DEMO:-false}
+      SEED_DEMO: ${SEED_DEMO:-true}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-}
     volumes:
       - uploads:/data/uploads
 
