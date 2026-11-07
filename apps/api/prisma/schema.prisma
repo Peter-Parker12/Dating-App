@@ -45,6 +45,12 @@ model User {
   name         String
   role         Role               @default(CUSTOMER)
   gender       String?
+  phone        String?            @unique
+  provinceCode Int?
+  province     String?
+  wardCode     Int?
+  ward         String?
+  addressLine  String?
   locale       String             @default("vi")
   status       UserStatus         @default(ACTIVE)
   idStatus     VerificationStatus @default(NONE)

@@ -12,6 +12,8 @@ import path from "node:path";
 import type { Server as IOServer } from "socket.io";
 import { prisma } from "./db.js";
 import { maskContacts } from "./mask.js";
+import { listProvinces, listWards, resolveAddress } from "./geo.js";
+import { normalizeVnPhone } from "./validators.js";
 import { actorFor, canTransition, chatOpen } from "./bookingRules.js";
 import { averageRating, canReviewBooking, ratingBreakdown, withinEditWindow } from "./reviewRules.js";
 
@@ -76,25 +78,45 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
   const registerSchema = z.object({
     email: z.string().email().toLowerCase(),
     password: z.string().min(8).max(128),
-    name: z.string().trim().min(1).max(80),
+    name: z.string().trim().min(2).max(80),
+    phone: z.string().transform((v, ctx) => {
+      const n = normalizeVnPhone(v);
+      if (!n) ctx.addIssue({ code: "custom", message: "invalid_phone" });
+      return n ?? "";
+    }),
     gender: z.enum(["female", "male"]),
+    provinceCode: z.number().int(),
+    wardCode: z.number().int(),
+    addressLine: z.string().trim().min(5).max(120),
     locale: z.enum(["vi", "en"]).default("vi"),
   });
   app.post("/api/auth/register", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req, reply) => {
     const p = registerSchema.safeParse(req.body);
     if (!p.success) return reply.code(400).send({ error: "invalid", issues: p.error.issues });
+    const addr = resolveAddress(p.data.provinceCode, p.data.wardCode);
+    if (!addr) return reply.code(400).send({ error: "invalid_address" });
     if (await prisma.user.findUnique({ where: { email: p.data.email } }))
       return reply.code(409).send({ error: "email_taken" });
-    const user = await prisma.user.create({
-      data: {
-        email: p.data.email, name: p.data.name, gender: p.data.gender, locale: p.data.locale,
-        // Women sign up as customers, men as talents; the role is never taken from the client.
-        role: p.data.gender === "female" ? "CUSTOMER" : "TALENT",
-        passwordHash: await argon2.hash(p.data.password),
-      },
-    });
-    setSession(reply, { id: user.id, role: user.role });
-    return publicUser(user);
+    if (await prisma.user.findUnique({ where: { phone: p.data.phone } }))
+      return reply.code(409).send({ error: "phone_taken" });
+    try {
+      const user = await prisma.user.create({
+        data: {
+          email: p.data.email, name: p.data.name, gender: p.data.gender, locale: p.data.locale,
+          phone: p.data.phone, provinceCode: p.data.provinceCode, province: addr.province,
+          wardCode: p.data.wardCode, ward: addr.ward, addressLine: p.data.addressLine,
+          // Women sign up as customers, men as talents; the role is never taken from the client.
+          role: p.data.gender === "female" ? "CUSTOMER" : "TALENT",
+          passwordHash: await argon2.hash(p.data.password),
+        },
+      });
+      setSession(reply, { id: user.id, role: user.role });
+      return publicUser(user);
+    } catch (e) {
+      // Concurrent signup raced past the checks above.
+      if ((e as { code?: string }).code === "P2002") return reply.code(409).send({ error: "email_or_phone_taken" });
+      throw e;
+    }
   });
 
   app.post("/api/auth/login", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req, reply) => {
@@ -114,7 +136,20 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
 
   app.get("/api/me", { preHandler: auth }, async (req) => {
     const u = await prisma.user.findUniqueOrThrow({ where: { id: req.user.id }, include: { talent: true } });
-    return { ...publicUser(u), talent: u.talent };
+    // Contact details are only ever returned to their owner.
+    return { ...publicUser(u), phone: u.phone, province: u.province, ward: u.ward, addressLine: u.addressLine, talent: u.talent };
+  });
+
+  // ---------- address data (post-2025 structure: province -> ward) ----------
+  app.get("/api/geo/provinces", async (_req, reply) => {
+    reply.header("Cache-Control", "public, max-age=86400");
+    return listProvinces();
+  });
+  app.get("/api/geo/provinces/:code/wards", async (req, reply) => {
+    const wards = listWards(Number((req.params as { code: string }).code));
+    if (!wards) return reply.code(404).send({ error: "not_found" });
+    reply.header("Cache-Control", "public, max-age=86400");
+    return wards;
   });
 
   // ---------- activities ----------

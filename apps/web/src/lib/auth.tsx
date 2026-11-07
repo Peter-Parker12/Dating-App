@@ -5,6 +5,7 @@ import { api } from "./api";
 export interface Me {
   id: string; email: string; name: string; role: "CUSTOMER" | "TALENT" | "ADMIN"; gender: string | null; locale: string;
   idStatus: "NONE" | "PENDING" | "APPROVED" | "REJECTED";
+  phone: string | null; province: string | null; ward: string | null; addressLine: string | null;
   talent: null | {
     displayName: string; gender: string; age: number; bio: string; heightCm: number | null; style: string;
     languages: string[]; hourlyPrice: number; activities: string[]; availability: string; district: string; sticker: string; availableNow: boolean; published: boolean;

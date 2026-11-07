@@ -27,7 +27,13 @@ export default function Profile() {
   return (
     <div className="mx-auto max-w-lg space-y-4">
       <h1 className="text-2xl font-bold">{t("profile.title")}</h1>
-      <div className="card text-sm"><div className="font-bold">{me.name}</div><div className="text-muted">{me.email}</div></div>
+      <div className="card space-y-1 text-sm">
+        <div className="font-bold">{me.name}</div>
+        <div className="text-muted">{me.email}</div>
+        {me.phone && <div><span className="text-muted">{t("profile.phone")}:</span> {me.phone}</div>}
+        {me.addressLine && <div><span className="text-muted">{t("profile.address")}:</span> {[me.addressLine, me.ward, me.province].filter(Boolean).join(", ")}</div>}
+        <div className="pt-1 text-xs text-muted">{t("profile.private")}</div>
+      </div>
       {me.role !== "ADMIN" && (
         <div className="card space-y-3">
           <h2 className="font-bold">{t("profile.verify")}</h2>
