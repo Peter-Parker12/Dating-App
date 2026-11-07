@@ -1,8 +1,11 @@
 import type { KycStatus, Role } from "@prisma/client";
 
-/** Admins are exempt from KYC; everyone else must be approved before acting. */
+/** Staff (admins and moderators) review other people's KYC. */
+export const isStaff = (role: Role): boolean => role === "ADMIN" || role === "MODERATOR";
+
+/** Staff are exempt from KYC; everyone else must be approved before acting. */
 export function mayAct(role: Role, kyc: KycStatus): boolean {
-  return role === "ADMIN" || kyc === "APPROVED";
+  return isStaff(role) || kyc === "APPROVED";
 }
 
 /** Only approved users appear publicly (Explore, profile pages). */

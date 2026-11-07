@@ -1,9 +1,11 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { io } from "socket.io-client";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
+import type { Key } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n";
 import { useRequireAuth } from "@/lib/useRequireAuth";
+import EmailSettings from "@/components/admin/EmailSettings";
 
 interface Pending {
   id: string; name: string; email: string; phone: string | null; gender: string | null; role: string;
@@ -12,11 +14,16 @@ interface Pending {
 }
 interface Sos { id: string; lat: number | null; lng: number | null; status: "OPEN" | "RESOLVED"; createdAt: string; user: { name: string; email: string } }
 interface AdminReview { id: string; rating: number; comment: string; hidden: boolean; talent: string; customer: { name: string; email: string }; reports: string[] }
-interface AdminUser { id: string; name: string; email: string; role: string; status: "ACTIVE" | "SUSPENDED"; kycStatus: string }
+interface AdminUser { id: string; name: string; email: string; role: string; status: "ACTIVE" | "SUSPENDED"; kycStatus: string; emailVerified: boolean }
+
+const ROLE_ERRORS: Record<string, Key> = {
+  email_unverified: "admin.roleBlocked.email_unverified", inactive: "admin.roleBlocked.inactive",
+};
 
 export default function Admin() {
   const { t } = useI18n();
-  const { me } = useRequireAuth("ADMIN");
+  const { me } = useRequireAuth(["ADMIN", "MODERATOR"]);
+  const isAdmin = me?.role === "ADMIN";
   const [pending, setPending] = useState<Pending[]>([]);
   const [sos, setSos] = useState<Sos[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -24,11 +31,16 @@ export default function Admin() {
   const [rejecting, setRejecting] = useState<string | null>(null);
   const [reason, setReason] = useState("");
   const [kycErr, setKycErr] = useState("");
+  const [roleErr, setRoleErr] = useState("");
+  const [userQuery, setUserQuery] = useState("");
 
   const load = useCallback(async () => {
-    const [p, s, u, r] = await Promise.all([api<Pending[]>("/admin/kyc"), api<Sos[]>("/admin/sos"), api<AdminUser[]>("/admin/users"), api<AdminReview[]>("/admin/reviews")]);
-    setPending(p); setSos(s); setUsers(u); setReviews(r);
-  }, []);
+    // Moderators only review verification submissions; everything else is admin-only.
+    setPending(await api<Pending[]>("/admin/kyc"));
+    if (!isAdmin) return;
+    const [s, u, r] = await Promise.all([api<Sos[]>("/admin/sos"), api<AdminUser[]>("/admin/users"), api<AdminReview[]>("/admin/reviews")]);
+    setSos(s); setUsers(u); setReviews(r);
+  }, [isAdmin]);
   useEffect(() => {
     if (!me) return;
     void load();
@@ -48,12 +60,21 @@ export default function Admin() {
   };
   const resolve = async (id: string) => { await api(`/admin/sos/${id}/resolve`, { method: "POST" }); await load(); };
   const setHidden = async (id: string, hidden: boolean) => { await api(`/admin/reviews/${id}/hidden`, { method: "POST", json: { hidden } }); await load(); };
+  const setRole = async (id: string, role: "MODERATOR" | "MEMBER") => {
+    setRoleErr("");
+    try { await api(`/admin/users/${id}/role`, { method: "POST", json: { role } }); await load(); }
+    catch (x) {
+      const code = x instanceof ApiError ? x.code : "error";
+      setRoleErr(t(ROLE_ERRORS[code] ?? "admin.roleBlocked.error"));
+    }
+  };
   const setStatus = async (id: string, status: string) => { await api(`/admin/users/${id}/status`, { method: "POST", json: { status } }); await load(); };
 
   return (
     <div className="space-y-8">
       <h1 className="text-2xl font-bold">{t("admin.title")}</h1>
 
+{isAdmin && (
       <section className="space-y-3">
         <h2 className="text-lg font-bold">{t("admin.sos")}</h2>
         {sos.length === 0 && <p className="text-muted">{t("admin.none")}</p>}
@@ -69,6 +90,7 @@ export default function Admin() {
           </div>
         ))}
       </section>
+      )}
 
       <section className="space-y-3">
         <h2 className="text-lg font-bold">{t("admin.kyc")} {pending.length > 0 && <span className="chip-pink">{pending.length}</span>}</h2>
@@ -111,6 +133,9 @@ export default function Admin() {
         ))}
       </section>
 
+{isAdmin && <EmailSettings />}
+
+      {isAdmin && (
       <section className="space-y-3">
         <h2 className="text-lg font-bold">{t("admin.reviews")}</h2>
         {reviews.length === 0 && <p className="text-muted">{t("admin.none")}</p>}
@@ -125,22 +150,33 @@ export default function Admin() {
           </div>
         ))}
       </section>
+      )}
 
+      {isAdmin && (
       <section className="space-y-3">
         <h2 className="text-lg font-bold">{t("admin.users")}</h2>
-        <div className="card divide-y divide-line !p-0">
-          {users.map((u) => (
-            <div key={u.id} className="flex items-center justify-between gap-2 px-4 py-2 text-sm">
-              <div className="min-w-0 truncate"><b>{u.name}</b> · {u.email} · {u.role} · {u.kycStatus}</div>
-              {u.id !== me.id && (
-                <button className="btn-ghost !px-3 !py-1" onClick={() => void setStatus(u.id, u.status === "ACTIVE" ? "SUSPENDED" : "ACTIVE")}>
-                  {u.status === "ACTIVE" ? t("admin.suspend") : t("admin.activate")}
-                </button>
+        {roleErr && <p className="text-sm text-red-600" role="alert">{roleErr}</p>}
+        <input className="input" type="search" placeholder={t("explore.search")} value={userQuery} onChange={(e) => setUserQuery(e.target.value)} />
+        <div className="card max-h-[28rem] divide-y divide-line overflow-y-auto !p-0">
+          {users.filter((u) => `${u.name} ${u.email}`.toLowerCase().includes(userQuery.trim().toLowerCase())).map((u) => (
+            <div key={u.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-sm">
+              <div className="min-w-0 truncate"><b>{u.name}</b> · {u.email} · {u.role === "MODERATOR" ? <span className="chip-pink">{t("admin.moderatorBadge")}</span> : u.role} · {u.kycStatus}</div>
+              {u.id !== me.id && u.role !== "ADMIN" && (
+                <div className="flex gap-2">
+                  {u.role === "MODERATOR"
+                    ? <button className="btn-ghost !px-3 !py-1" onClick={() => void setRole(u.id, "MEMBER")}>{t("admin.removeModerator")}</button>
+                    : <button className="btn-soft !px-3 !py-1" onClick={() => void setRole(u.id, "MODERATOR")}>{t("admin.makeModerator")}</button>}
+                  <button className="btn-ghost !px-3 !py-1" onClick={() => void setStatus(u.id, u.status === "ACTIVE" ? "SUSPENDED" : "ACTIVE")}>
+                    {u.status === "ACTIVE" ? t("admin.suspend") : t("admin.activate")}
+                  </button>
+                </div>
               )}
             </div>
           ))}
         </div>
       </section>
+      )}
+
     </div>
   );
 }

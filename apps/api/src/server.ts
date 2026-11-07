@@ -3,7 +3,7 @@ import { buildApp } from "./app.js";
 import { prisma } from "./db.js";
 import { actorFor, chatOpen } from "./bookingRules.js";
 import { mayAct } from "./kycRules.js";
-import { deliveryMode } from "./notify.js";
+import { getDeliveryMode } from "./notify.js";
 
 let io: Server | null = null;
 const app = buildApp(() => io);
@@ -38,11 +38,12 @@ io.on("connection", (socket) => {
   });
 });
 
-if (deliveryMode.email === "console" || deliveryMode.sms === "console")
-  console.warn(`[notify] email=${deliveryMode.email} sms=${deliveryMode.sms}: codes and notifications are only logged, not delivered. Configure SMTP_*/TWILIO_* for real delivery.`);
-
 const port = Number(process.env.PORT ?? 4000);
-app.listen({ port, host: "0.0.0.0" }).catch((e) => {
+app.listen({ port, host: "0.0.0.0" }).then(async () => {
+  const mode = await getDeliveryMode();
+  if (mode.email === "console" || mode.sms === "console")
+    console.warn(`[notify] email=${mode.email} sms=${mode.sms}: codes and notifications are only logged, not delivered. Set up SMTP in Admin > Email settings and TWILIO_* for real delivery.`);
+}).catch((e) => {
   app.log.error(e);
   process.exit(1);
 });

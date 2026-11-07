@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import { api } from "./api";
 
 export interface Me {
-  id: string; email: string; name: string; role: "CUSTOMER" | "TALENT" | "ADMIN"; gender: string | null; locale: string;
+  id: string; email: string; name: string; role: "CUSTOMER" | "TALENT" | "ADMIN" | "MODERATOR"; gender: string | null; locale: string;
   kycStatus: "PENDING" | "IN_REVIEW" | "APPROVED" | "REJECTED";
   emailVerified: boolean; phoneVerified: boolean; hasId: boolean; hasStudentCard: boolean; hasProfileImage: boolean;
   kycRejectReason: string | null;
@@ -31,5 +31,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export const useAuth = () => useContext(AuthCtx);
 
-/** Admins are exempt from KYC; everyone else must be approved to act. */
-export const isApproved = (me: Me | null) => !!me && (me.role === "ADMIN" || me.kycStatus === "APPROVED");
+/** Admins and moderators review other people's verification. */
+export const isStaffRole = (role: Me["role"]) => role === "ADMIN" || role === "MODERATOR";
+
+/** Staff are exempt from KYC; everyone else must be approved to act. */
+export const isApproved = (me: Me | null) => !!me && (isStaffRole(me.role) || me.kycStatus === "APPROVED");

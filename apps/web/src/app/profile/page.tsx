@@ -22,7 +22,7 @@ export default function Profile() {
         {me.addressLine && <div><span className="text-muted">{t("profile.address")}:</span> {[me.addressLine, me.ward, me.province].filter(Boolean).join(", ")}</div>}
         <div className="pt-1 text-xs text-muted">{t("profile.private")}</div>
       </div>
-      {me.role !== "ADMIN" && (
+      {me.role !== "ADMIN" && me.role !== "MODERATOR" && (
         <div className="card space-y-2">
           <h2 className="font-bold">{t("profile.kycStatus")}</h2>
           <p className="text-sm">{t(STATUS_KEY[me.kycStatus])}</p>

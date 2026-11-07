@@ -24,7 +24,16 @@ profile image. Admins review the submission under **Admin > KYC** and approve or
 rejected users can resubmit. Users get an in-app notification and an email on every status change. Admins are
 exempt, and the SOS button works for everyone.
 
-Delivery needs configuring in `.env` (see `.env.example`): SMTP for email, Twilio for SMS. Without them,
+**Roles:** admins can make any active user with a verified email a *moderator* (Admin > Users). Moderators can
+review and approve or reject verification submissions and nothing else (no SOS, user management or settings),
+and, like admins, they skip KYC themselves. They can't review their own submission.
+
+**Email settings:** admins configure SMTP in the UI under Admin > Email settings (host, port, user, password, sender,
+with a "send test email" button). The password is encrypted at rest (AES-256-GCM, key from `SETTINGS_KEY`, falling
+back to `JWT_SECRET`: keep it stable, or saved passwords become unreadable) and is never returned by the API.
+Settings saved there override the `SMTP_*` environment variables. SMS still uses the Twilio variables.
+
+Delivery needs configuring in `.env` (see `.env.example`) or in the admin UI: SMTP for email, Twilio for SMS. Without them,
 codes and notifications are only written to the API log, which is fine for development but means real users
 cannot verify. Demo profiles are seeded as already approved.
 

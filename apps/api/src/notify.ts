@@ -1,33 +1,52 @@
 import nodemailer from "nodemailer";
 import type { Server as IOServer } from "socket.io";
 import { prisma } from "./db.js";
+import { resolveEmailConfig, type EmailConfig } from "./emailConfig.js";
 
 type Locale = "vi" | "en";
 
 /**
- * Delivery drivers. With no SMTP/Twilio credentials configured, messages (including OTP codes)
- * are written to the server log instead of being sent, which is meant for development only.
+ * Delivery drivers. Email uses the SMTP settings an admin saved in the UI, falling back to the SMTP_*
+ * environment variables. With neither configured, messages (including OTP codes) are written to the
+ * server log instead of being sent, which is meant for development only.
  */
-const smtpConfigured = !!process.env.SMTP_HOST;
 const twilioConfigured = !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM);
 
-const transporter = smtpConfigured
-  ? nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT ?? 587),
-      secure: process.env.SMTP_SECURE === "true",
-      auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined,
-    })
-  : null;
+const transporters = new Map<string, nodemailer.Transporter>();
+function transporterFor(cfg: EmailConfig) {
+  const key = JSON.stringify([cfg.host, cfg.port, cfg.secure, cfg.user, cfg.pass]);
+  let t = transporters.get(key);
+  if (!t) {
+    transporters.clear();
+    t = nodemailer.createTransport({
+      host: cfg.host, port: cfg.port, secure: cfg.secure,
+      auth: cfg.user ? { user: cfg.user, pass: cfg.pass } : undefined,
+      connectionTimeout: 10_000, greetingTimeout: 10_000, socketTimeout: 15_000,
+    });
+    transporters.set(key, t);
+  }
+  return t;
+}
 
-export const deliveryMode = { email: smtpConfigured ? "smtp" : "console", sms: twilioConfigured ? "twilio" : "console" } as const;
+export async function getDeliveryMode() {
+  const { source } = await resolveEmailConfig();
+  return { email: source === "none" ? ("console" as const) : source, sms: twilioConfigured ? ("twilio" as const) : ("console" as const) };
+}
 
 export async function sendEmail(to: string, subject: string, text: string): Promise<void> {
-  if (!transporter) {
+  const { cfg } = await resolveEmailConfig();
+  if (!cfg) {
     console.log(`[email:console] to=${to} subject=${subject}\n${text}`);
     return;
   }
-  await transporter.sendMail({ from: process.env.MAIL_FROM ?? process.env.SMTP_USER, to, subject, text });
+  await transporterFor(cfg).sendMail({ from: cfg.from, to, subject, text });
+}
+
+/** Used by the admin "send test email" button: never falls back to the log, so failures are visible. */
+export async function sendEmailStrict(to: string, subject: string, text: string): Promise<void> {
+  const { cfg } = await resolveEmailConfig();
+  if (!cfg) throw new Error("not_configured");
+  await transporterFor(cfg).sendMail({ from: cfg.from, to, subject, text });
 }
 
 export async function sendSms(to: string, text: string): Promise<void> {
@@ -56,7 +75,7 @@ export const otpMessage = (locale: Locale, code: string) =>
 
 export type NotificationType =
   | "KYC_SUBMITTED" | "KYC_APPROVED" | "KYC_REJECTED" | "KYC_NEW_SUBMISSION"
-  | "ACCOUNT_SUSPENDED" | "ACCOUNT_REACTIVATED";
+  | "ACCOUNT_SUSPENDED" | "ACCOUNT_REACTIVATED" | "ROLE_MODERATOR" | "ROLE_MEMBER";
 
 const emailTexts: Record<Locale, Record<NotificationType, (d: Record<string, string>) => { subject: string; text: string }>> = {
   vi: {
@@ -66,6 +85,8 @@ const emailTexts: Record<Locale, Record<NotificationType, (d: Record<string, str
     KYC_NEW_SUBMISSION: (d) => ({ subject: "Có hồ sơ xác minh mới", text: `${d.name ?? "Một người dùng"} vừa gửi hồ sơ xác minh.` }),
     ACCOUNT_SUSPENDED: () => ({ subject: "Tài khoản bị tạm khoá", text: "Tài khoản của bạn đã bị tạm khoá. Vui lòng liên hệ hỗ trợ nếu bạn cho rằng đây là nhầm lẫn." }),
     ACCOUNT_REACTIVATED: () => ({ subject: "Tài khoản đã được mở khoá", text: "Tài khoản của bạn đã được mở khoá. Bạn có thể đăng nhập lại." }),
+    ROLE_MODERATOR: () => ({ subject: "Bạn là điều hành viên", text: "Bạn đã được cấp quyền điều hành viên: có thể xem xét và duyệt hồ sơ xác minh trong mục Duyệt hồ sơ." }),
+    ROLE_MEMBER: () => ({ subject: "Quyền điều hành viên đã bị gỡ", text: "Quyền điều hành viên của bạn đã được gỡ. Tài khoản trở lại như thành viên thường." }),
   },
   en: {
     KYC_SUBMITTED: () => ({ subject: "Verification received", text: "We received your verification documents. Our team will review them shortly." }),
@@ -74,6 +95,8 @@ const emailTexts: Record<Locale, Record<NotificationType, (d: Record<string, str
     KYC_NEW_SUBMISSION: (d) => ({ subject: "New verification to review", text: `${d.name ?? "A user"} submitted verification documents.` }),
     ACCOUNT_SUSPENDED: () => ({ subject: "Account suspended", text: "Your account has been suspended. Contact support if you think this is a mistake." }),
     ACCOUNT_REACTIVATED: () => ({ subject: "Account reactivated", text: "Your account has been reactivated. You can log in again." }),
+    ROLE_MODERATOR: () => ({ subject: "You are now a moderator", text: "You have been made a moderator: you can review and approve verification submissions in the Review section." }),
+    ROLE_MEMBER: () => ({ subject: "Moderator access removed", text: "Your moderator access has been removed. Your account is back to a regular member." }),
   },
 };
 

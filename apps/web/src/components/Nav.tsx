@@ -18,6 +18,7 @@ export default function Nav() {
     { href: "/saved", label: "nav.saved", show: me?.role === "CUSTOMER", icon: Heart },
     { href: "/talent", label: "nav.talent", show: me?.role === "TALENT", icon: User },
     { href: "/admin", label: "nav.admin", show: me?.role === "ADMIN", icon: ShieldCheck },
+    { href: "/admin", label: "nav.review", show: me?.role === "MODERATOR", icon: ShieldCheck },
     { href: "/safety", label: "nav.safety", show: true, icon: ShieldCheck },
     { href: "/profile", label: "nav.profile", show: !!me, icon: User },
   ];

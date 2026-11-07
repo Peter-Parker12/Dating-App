@@ -1,5 +1,5 @@
 export class ApiError extends Error {
-  constructor(public status: number, public code: string) {
+  constructor(public status: number, public code: string, public detail?: string) {
     super(code);
   }
 }
@@ -22,7 +22,7 @@ function failure(status: number, data: unknown): ApiError {
   const code = (data as { error?: string }).error ?? "error";
   if (status === 403 && code === "kyc_required" && typeof window !== "undefined" && !window.location.pathname.startsWith("/verify"))
     window.location.assign("/verify");
-  return new ApiError(status, code);
+  return new ApiError(status, code, (data as { detail?: string }).detail);
 }
 
 export async function apiForm<T = unknown>(path: string, body: FormData): Promise<T> {

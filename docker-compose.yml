@@ -31,6 +31,7 @@ services:
       DEMO_PASSWORD: ${DEMO_PASSWORD:-}
       # Email / SMS delivery. With these unset, verification codes and notifications are only
       # written to the API log (development use). See README.
+      SETTINGS_KEY: ${SETTINGS_KEY:-}
       MAIL_FROM: ${MAIL_FROM:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}

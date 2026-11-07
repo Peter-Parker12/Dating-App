@@ -96,7 +96,7 @@ export default function Verify() {
   useEffect(() => () => urls.current.forEach(URL.revokeObjectURL), []);
 
   if (!me) return <p>{t("common.loading")}</p>;
-  if (me.role === "ADMIN") return <p className="text-muted">-</p>;
+  if (me.role === "ADMIN" || me.role === "MODERATOR") return <p className="text-muted">-</p>;
 
   const pick = (field: (typeof DOCS)[number]["field"], f: File | undefined) => {
     if (!f) return;

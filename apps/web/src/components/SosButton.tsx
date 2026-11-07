@@ -8,7 +8,7 @@ export default function SosButton() {
   const { me } = useAuth();
   const { t } = useI18n();
   const [busy, setBusy] = useState(false);
-  if (!me || me.role === "ADMIN") return null;
+  if (!me || me.role === "ADMIN" || me.role === "MODERATOR") return null;
 
   const send = async () => {
     if (!window.confirm(t("sos.confirm"))) return;

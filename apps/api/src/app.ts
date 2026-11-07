@@ -17,16 +17,19 @@ import { listProvinces, listWards, resolveAddress } from "./geo.js";
 import { normalizeVnPhone } from "./validators.js";
 import { actorFor, canTransition, chatOpen } from "./bookingRules.js";
 import { averageRating, canReviewBooking, ratingBreakdown, withinEditWindow } from "./reviewRules.js";
-import { isPubliclyVisible, mayAct, mayReview, sniffImage, submitBlocker } from "./kycRules.js";
+import { isPubliclyVisible, isStaff, mayAct, mayReview, sniffImage, submitBlocker } from "./kycRules.js";
+import { demoteBlocker, promoteBlocker, roleAfterDemotion } from "./staffRules.js";
+import { invalidateEmailConfig, readStoredEmail, resolveEmailConfig, type StoredEmail } from "./emailConfig.js";
+import { encryptSecret } from "./secrets.js";
 import { checkOtpState, generateOtp, hashOtp, otpMatches, OTP_MAX_ATTEMPTS, OTP_MAX_PER_HOUR, OTP_TTL_MS, resendWaitMs } from "./otp.js";
-import { createNotifier, otpMessage, sendEmail, sendSms } from "./notify.js";
+import { createNotifier, otpMessage, sendEmail, sendEmailStrict, sendSms } from "./notify.js";
 
 export const UPLOAD_DIR = process.env.UPLOAD_DIR ?? path.resolve("uploads");
 const COOKIE = "session";
 
 interface Session {
   id: string;
-  role: "CUSTOMER" | "TALENT" | "ADMIN";
+  role: "CUSTOMER" | "TALENT" | "ADMIN" | "MODERATOR";
 }
 declare module "@fastify/jwt" {
   interface FastifyJWT {
@@ -75,6 +78,12 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
   const adminOnly = async (req: FastifyRequest, reply: FastifyReply) => {
     await auth(req, reply);
     if (!reply.sent && req.user.role !== "ADMIN") return reply.code(403).send({ error: "forbidden" });
+  };
+
+  /** Admins and moderators: reviewing verification submissions. */
+  const staffOnly = async (req: FastifyRequest, reply: FastifyReply) => {
+    await auth(req, reply);
+    if (!reply.sent && !isStaff(req.user.role)) return reply.code(403).send({ error: "forbidden" });
   };
 
   const setSession = (reply: FastifyReply, s: Session) =>
@@ -509,7 +518,7 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
   const removeFile = (key: string | null | undefined) => (key ? unlink(path.join(UPLOAD_DIR, key)).catch(() => {}) : Promise.resolve());
 
   app.post("/api/kyc/submit", { preHandler: auth, config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req, reply) => {
-    if (req.user.role === "ADMIN") return reply.code(400).send({ error: "admin_exempt" });
+    if (isStaff(req.user.role)) return reply.code(400).send({ error: "staff_exempt" });
     const newKeys: Partial<Record<keyof typeof KYC_FIELDS, string>> = {};
     const discard = () => Promise.all(Object.values(newKeys).map(removeFile));
     try {
@@ -553,8 +562,8 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     if (newKeys.profileImage) await removeFile(u.profileImageKey);
 
     await notifyUser(u.id, "KYC_SUBMITTED");
-    const admins = await prisma.user.findMany({ where: { role: "ADMIN", status: "ACTIVE" }, select: { id: true } });
-    await Promise.all(admins.map((a) => notifyUser(a.id, "KYC_NEW_SUBMISSION", { name: u.name }, { email: false })));
+    const reviewers = await prisma.user.findMany({ where: { role: { in: ["ADMIN", "MODERATOR"] }, status: "ACTIVE" }, select: { id: true } });
+    await Promise.all(reviewers.map((a) => notifyUser(a.id, "KYC_NEW_SUBMISSION", { name: u.name }, { email: false })));
     return { kycStatus: "IN_REVIEW" };
   });
 
@@ -609,7 +618,7 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
   });
 
   // ---------- admin ----------
-  app.get("/api/admin/kyc", { preHandler: adminOnly }, async () => {
+  app.get("/api/admin/kyc", { preHandler: staffOnly }, async () => {
     const rows = await prisma.user.findMany({
       where: { kycStatus: "IN_REVIEW" }, orderBy: { kycSubmittedAt: "asc" },
       select: {
@@ -621,7 +630,7 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     return rows.map(({ emailVerifiedAt, phoneVerifiedAt, ...r }) => ({ ...r, emailVerified: !!emailVerifiedAt, phoneVerified: !!phoneVerifiedAt }));
   });
 
-  app.get("/api/admin/kyc/:userId/:kind", { preHandler: adminOnly }, async (req, reply) => {
+  app.get("/api/admin/kyc/:userId/:kind", { preHandler: staffOnly }, async (req, reply) => {
     const { userId, kind } = req.params as { userId: string; kind: string };
     const u = await prisma.user.findUnique({ where: { id: userId } });
     const key = kind === "id" ? u?.idImageKey : kind === "student" ? u?.studentCardKey : kind === "profile" ? u?.profileImageKey : null;
@@ -632,13 +641,14 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     return reply.send(createReadStream(path.join(UPLOAD_DIR, key)));
   });
 
-  app.post("/api/admin/kyc/:userId", { preHandler: adminOnly }, async (req, reply) => {
+  app.post("/api/admin/kyc/:userId", { preHandler: staffOnly }, async (req, reply) => {
     const { userId } = req.params as { userId: string };
     const p = z.discriminatedUnion("approve", [
       z.object({ approve: z.literal(true) }),
       z.object({ approve: z.literal(false), reason: z.string().trim().min(3).max(300) }),
     ]).safeParse(req.body);
     if (!p.success) return reply.code(400).send({ error: "invalid" });
+    if (userId === req.user.id) return reply.code(403).send({ error: "cannot_review_self" });
     const u = await prisma.user.findUnique({ where: { id: userId } });
     if (!u || !mayReview(u.kycStatus)) return reply.code(409).send({ error: "not_in_review" });
     await prisma.user.update({
@@ -689,11 +699,82 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     return { ok: true };
   });
 
-  app.get("/api/admin/users", { preHandler: adminOnly }, async () =>
-    prisma.user.findMany({
-      select: { id: true, name: true, email: true, role: true, status: true, kycStatus: true, createdAt: true },
+  app.get("/api/admin/users", { preHandler: adminOnly }, async () => {
+    const rows = await prisma.user.findMany({
+      select: { id: true, name: true, email: true, role: true, status: true, kycStatus: true, createdAt: true, emailVerifiedAt: true },
       orderBy: { createdAt: "desc" }, take: 200,
-    }));
+    });
+    return rows.map(({ emailVerifiedAt, ...r }) => ({ ...r, emailVerified: !!emailVerifiedAt }));
+  });
+
+  app.post("/api/admin/users/:id/role", { preHandler: adminOnly }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const p = z.object({ role: z.enum(["MODERATOR", "MEMBER"]) }).safeParse(req.body);
+    if (!p.success) return reply.code(400).send({ error: "invalid" });
+    const t = await prisma.user.findUnique({ where: { id }, select: { id: true, role: true, status: true, gender: true, emailVerifiedAt: true } });
+    if (!t) return reply.code(404).send({ error: "not_found" });
+    const target = { id: t.id, role: t.role, active: t.status === "ACTIVE", emailVerified: !!t.emailVerifiedAt };
+    const block = p.data.role === "MODERATOR" ? promoteBlocker(req.user, target) : demoteBlocker(req.user, target);
+    if (block) return reply.code(block === "not_admin" ? 403 : 409).send({ error: block });
+    const role = p.data.role === "MODERATOR" ? ("MODERATOR" as const) : roleAfterDemotion(t.gender);
+    await prisma.user.update({ where: { id }, data: { role } });
+    await notifyUser(id, p.data.role === "MODERATOR" ? "ROLE_MODERATOR" : "ROLE_MEMBER");
+    return { ok: true, role };
+  });
+
+  // ---------- admin: email (SMTP) settings ----------
+  const emailBody = z.object({
+    host: z.string().trim().min(1).max(253).regex(/^[A-Za-z0-9.-]+$/, "host"),
+    port: z.number().int().min(1).max(65535),
+    secure: z.boolean(),
+    user: z.string().trim().max(200).optional(),
+    pass: z.string().max(500).optional(),
+    clearPassword: z.boolean().optional(),
+    from: z.string().trim().min(3).max(200).refine((v) => v.includes("@"), "from"),
+  });
+
+  app.get("/api/admin/settings/email", { preHandler: adminOnly }, async () => {
+    const { cfg, source } = await resolveEmailConfig();
+    const stored = await readStoredEmail();
+    // The password is never sent back, only whether one is set.
+    return {
+      source,
+      host: cfg?.host ?? "", port: cfg?.port ?? 587, secure: cfg?.secure ?? false, user: cfg?.user ?? "", from: cfg?.from ?? "",
+      hasPassword: !!cfg?.pass, passwordUnreadable: !!stored?.passEnc && !cfg?.pass,
+    };
+  });
+
+  app.put("/api/admin/settings/email", { preHandler: adminOnly }, async (req, reply) => {
+    const p = emailBody.safeParse(req.body);
+    if (!p.success) return reply.code(400).send({ error: "invalid", issues: p.error.issues.map((i) => i.path.join(".")) });
+    const prev = await readStoredEmail();
+    let passEnc: string | undefined = prev?.passEnc;
+    if (p.data.clearPassword) passEnc = undefined;
+    if (p.data.pass) passEnc = encryptSecret(p.data.pass);
+    const value: StoredEmail = { host: p.data.host, port: p.data.port, secure: p.data.secure, user: p.data.user || undefined, passEnc, from: p.data.from };
+    await prisma.setting.upsert({ where: { key: "email" }, create: { key: "email", value, updatedBy: req.user.id }, update: { value, updatedBy: req.user.id } });
+    invalidateEmailConfig();
+    return { ok: true };
+  });
+
+  app.delete("/api/admin/settings/email", { preHandler: adminOnly }, async () => {
+    await prisma.setting.deleteMany({ where: { key: "email" } });
+    invalidateEmailConfig();
+    return { ok: true };
+  });
+
+  app.post("/api/admin/settings/email/test", { preHandler: adminOnly, config: { rateLimit: { max: 5, timeWindow: "1 minute" } } }, async (req, reply) => {
+    const p = z.object({ to: z.string().email() }).safeParse(req.body);
+    if (!p.success) return reply.code(400).send({ error: "invalid" });
+    try {
+      await sendEmailStrict(p.data.to, "Cùng Đi: test email", "This is a test email from the Cùng Đi admin settings. If you can read this, email delivery works.");
+      return { ok: true };
+    } catch (e) {
+      const msg = (e as Error).message;
+      if (msg === "not_configured") return reply.code(400).send({ error: "not_configured" });
+      return reply.code(502).send({ error: "smtp_failed", detail: msg.slice(0, 200) });
+    }
+  });
   app.post("/api/admin/users/:id/status", { preHandler: adminOnly }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const p = z.object({ status: z.enum(["ACTIVE", "SUSPENDED"]) }).safeParse(req.body);
