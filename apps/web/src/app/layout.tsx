@@ -6,6 +6,7 @@ import { AuthProvider } from "@/lib/auth";
 import Nav from "@/components/Nav";
 import SosButton from "@/components/SosButton";
 import Footer from "@/components/Footer";
+import KycBanner from "@/components/KycBanner";
 
 export const metadata: Metadata = {
   title: "Cùng Đi",
@@ -30,6 +31,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <I18nProvider>
           <AuthProvider>
             <Nav />
+            <KycBanner />
             <main className="page-enter mx-auto max-w-6xl px-4 pb-10 pt-6 md:px-6">{children}</main>
             <Footer />
             <SosButton />

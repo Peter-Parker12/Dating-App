@@ -18,11 +18,16 @@ enum UserStatus {
   SUSPENDED
 }
 
-enum VerificationStatus {
-  NONE
+enum KycStatus {
   PENDING
+  IN_REVIEW
   APPROVED
   REJECTED
+}
+
+enum OtpChannel {
+  EMAIL
+  PHONE
 }
 
 enum BookingStatus {
@@ -53,9 +58,16 @@ model User {
   addressLine  String?
   locale       String             @default("vi")
   status       UserStatus         @default(ACTIVE)
-  idStatus     VerificationStatus @default(NONE)
-  idImageKey   String?
-  selfieKey    String?
+  kycStatus       KycStatus          @default(PENDING)
+  emailVerifiedAt DateTime?
+  phoneVerifiedAt DateTime?
+  idImageKey      String?
+  studentCardKey  String?
+  profileImageKey String?
+  kycSubmittedAt  DateTime?
+  kycReviewedAt   DateTime?
+  kycReviewedBy   String?
+  kycRejectReason String?
   createdAt    DateTime           @default(now())
 
   talent      TalentProfile?
@@ -63,6 +75,8 @@ model User {
   asCustomer  Booking[]      @relation("customer")
   reviewsWritten Review[]    @relation("reviewer")
   reviewReports  ReviewReport[]
+  otps           OtpCode[]
+  notifications  Notification[]
   asTalent    Booking[]      @relation("talent")
   messages    Message[]
   sosAlerts   SosAlert[]
@@ -193,4 +207,31 @@ model ReviewReport {
   createdAt DateTime @default(now())
 
   @@id([reviewId, userId])
+}
+
+model OtpCode {
+  id        String     @id @default(cuid())
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel   OtpChannel
+  target    String
+  codeHash  String
+  expiresAt DateTime
+  attempts  Int        @default(0)
+  usedAt    DateTime?
+  createdAt DateTime   @default(now())
+
+  @@index([userId, channel, createdAt])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  data      Json?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, createdAt])
 }

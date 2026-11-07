@@ -8,7 +8,7 @@ import ReviewList from "@/components/ReviewList";
 
 export default function TalentDashboard() {
   const { t, locale } = useI18n();
-  const { me } = useRequireAuth("TALENT");
+  const { me } = useRequireAuth("TALENT", { approved: true });
   const { refresh } = useAuth();
   const [acts, setActs] = useState<Activity[]>([]);
   const [f, setF] = useState({

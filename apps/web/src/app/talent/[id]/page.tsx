@@ -2,7 +2,7 @@
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { api, vnd, type Activity, type Talent } from "@/lib/api";
-import { useAuth } from "@/lib/auth";
+import { isApproved, useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import Avatar from "@/components/Avatar";
 import ReviewList from "@/components/ReviewList";
@@ -21,7 +21,7 @@ export default function TalentPage({ params }: { params: Promise<{ id: string }>
     void api<Activity[]>("/activities").then(setActs).catch(() => {});
   }, [id]);
   useEffect(() => {
-    if (me?.role !== "CUSTOMER") return;
+    if (me?.role !== "CUSTOMER" || !isApproved(me)) return;
     void api<Talent[]>("/saved").then((s) => setSaved(s.some((x) => x.id === id))).catch(() => {});
   }, [me, id]);
 
@@ -69,7 +69,7 @@ export default function TalentPage({ params }: { params: Promise<{ id: string }>
           <div className="flex flex-wrap gap-2">{talent.activities.map((a) => <span key={a} className="chip-pink">{actName(a)}</span>)}</div>
         </div>
         <div className="flex gap-2 pt-2">
-          {me?.role === "CUSTOMER" && (
+          {me?.role === "CUSTOMER" && isApproved(me) && (
             <button className="btn-ghost flex-1" onClick={async () => { await api(`/saved/${id}`, { method: saved ? "DELETE" : "PUT" }); setSaved(!saved); }}>
               {saved ? `♥ ${t("talent.saved")}` : `♡ ${t("talent.save")}`}
             </button>

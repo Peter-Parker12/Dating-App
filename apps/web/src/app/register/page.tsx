@@ -44,7 +44,7 @@ export default function Register() {
         name: f.name, email: f.email, phone: f.phone, gender: f.gender, password: f.password,
         provinceCode: Number(f.provinceCode), wardCode: Number(f.wardCode), addressLine: f.addressLine, locale,
       } });
-      await refresh(); router.push(f.gender === "male" ? "/talent" : "/explore");
+      await refresh(); router.push("/verify");
     } catch (x) {
       const code = x instanceof ApiError ? x.code : "";
       const msg: Record<string, Key> = {

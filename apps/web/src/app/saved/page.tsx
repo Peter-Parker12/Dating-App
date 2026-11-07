@@ -7,7 +7,7 @@ import TalentCard from "@/components/TalentCard";
 
 export default function Saved() {
   const { t } = useI18n();
-  const { me } = useRequireAuth("CUSTOMER");
+  const { me } = useRequireAuth("CUSTOMER", { approved: true });
   const [items, setItems] = useState<Talent[] | null>(null);
   useEffect(() => { if (me) void api<Talent[]>("/saved").then(setItems).catch(() => setItems([])); }, [me]);
   if (!me || items === null) return <p>{t("common.loading")}</p>;

@@ -6,9 +6,10 @@ import rateLimit from "@fastify/rate-limit";
 import argon2 from "argon2";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
-import { createWriteStream, createReadStream, mkdirSync, existsSync } from "node:fs";
-import { pipeline } from "node:stream/promises";
+import { createReadStream, mkdirSync, existsSync } from "node:fs";
+import { unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import type { KycStatus } from "@prisma/client";
 import type { Server as IOServer } from "socket.io";
 import { prisma } from "./db.js";
 import { maskContacts } from "./mask.js";
@@ -16,6 +17,9 @@ import { listProvinces, listWards, resolveAddress } from "./geo.js";
 import { normalizeVnPhone } from "./validators.js";
 import { actorFor, canTransition, chatOpen } from "./bookingRules.js";
 import { averageRating, canReviewBooking, ratingBreakdown, withinEditWindow } from "./reviewRules.js";
+import { isPubliclyVisible, mayAct, mayReview, sniffImage, submitBlocker } from "./kycRules.js";
+import { checkOtpState, generateOtp, hashOtp, otpMatches, OTP_MAX_ATTEMPTS, OTP_MAX_PER_HOUR, OTP_TTL_MS, resendWaitMs } from "./otp.js";
+import { createNotifier, otpMessage, sendEmail, sendSms } from "./notify.js";
 
 export const UPLOAD_DIR = process.env.UPLOAD_DIR ?? path.resolve("uploads");
 const COOKIE = "session";
@@ -30,10 +34,17 @@ declare module "@fastify/jwt" {
     user: Session;
   }
 }
+declare module "fastify" {
+  interface FastifyRequest {
+    kyc: KycStatus;
+  }
+}
 
 export function buildApp(getIO: () => IOServer | null = () => null) {
   const app = Fastify({ logger: process.env.NODE_ENV !== "test", trustProxy: true });
   mkdirSync(UPLOAD_DIR, { recursive: true });
+  const notifyUser = createNotifier(getIO);
+  const otpSecret = () => process.env.JWT_SECRET ?? "dev-secret-change-me";
 
   app.register(cookie);
   app.register(jwt, {
@@ -42,17 +53,24 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     sign: { expiresIn: "7d" },
   });
   app.register(rateLimit, { global: false });
-  app.register(multipart, { limits: { fileSize: 5 * 1024 * 1024, files: 2 } });
+  app.register(multipart, { limits: { fileSize: 5 * 1024 * 1024, files: 3 } });
 
+  app.decorateRequest("kyc", "PENDING");
   const auth = async (req: FastifyRequest, reply: FastifyReply) => {
     try {
       await req.jwtVerify();
     } catch {
       return reply.code(401).send({ error: "unauthorized" });
     }
-    const u = await prisma.user.findUnique({ where: { id: req.user.id }, select: { status: true, role: true } });
+    const u = await prisma.user.findUnique({ where: { id: req.user.id }, select: { status: true, role: true, kycStatus: true } });
     if (!u || u.status !== "ACTIVE") return reply.code(401).send({ error: "unauthorized" });
     req.user.role = u.role;
+    req.kyc = u.kycStatus;
+  };
+  /** Everything except viewing profiles requires an approved account (admins are exempt). */
+  const approved = async (req: FastifyRequest, reply: FastifyReply) => {
+    await auth(req, reply);
+    if (!reply.sent && !mayAct(req.user.role, req.kyc)) return reply.code(403).send({ error: "kyc_required", kyc: req.kyc });
   };
   const adminOnly = async (req: FastifyRequest, reply: FastifyReply) => {
     await auth(req, reply);
@@ -68,8 +86,8 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
       maxAge: 7 * 24 * 3600,
     });
 
-  const publicUser = (u: { id: string; email: string; name: string; role: string; gender: string | null; locale: string; idStatus: string }) => ({
-    id: u.id, email: u.email, name: u.name, role: u.role, gender: u.gender, locale: u.locale, idStatus: u.idStatus,
+  const publicUser = (u: { id: string; email: string; name: string; role: string; gender: string | null; locale: string; kycStatus: string }) => ({
+    id: u.id, email: u.email, name: u.name, role: u.role, gender: u.gender, locale: u.locale, kycStatus: u.kycStatus,
   });
 
   app.get("/api/health", async () => ({ ok: true }));
@@ -137,7 +155,12 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
   app.get("/api/me", { preHandler: auth }, async (req) => {
     const u = await prisma.user.findUniqueOrThrow({ where: { id: req.user.id }, include: { talent: true } });
     // Contact details are only ever returned to their owner.
-    return { ...publicUser(u), phone: u.phone, province: u.province, ward: u.ward, addressLine: u.addressLine, talent: u.talent };
+    return {
+      ...publicUser(u), phone: u.phone, province: u.province, ward: u.ward, addressLine: u.addressLine, talent: u.talent,
+      emailVerified: !!u.emailVerifiedAt, phoneVerified: !!u.phoneVerifiedAt,
+      hasId: !!u.idImageKey, hasStudentCard: !!u.studentCardKey, hasProfileImage: !!u.profileImageKey,
+      kycRejectReason: u.kycRejectReason, kycSubmittedAt: u.kycSubmittedAt,
+    };
   });
 
   // ---------- address data (post-2025 structure: province -> ward) ----------
@@ -159,12 +182,13 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
   const publicTalent = (t: {
     userId: string; displayName: string; gender: string; age: number; bio: string; heightCm: number | null;
     style: string; languages: string[]; hourlyPrice: number; photos: string[]; activities: string[];
-    availability: string; district: string; sticker: string; availableNow: boolean; ratingAvg: number; ratingCount: number; user?: { idStatus: string };
+    availability: string; district: string; sticker: string; availableNow: boolean; ratingAvg: number; ratingCount: number; user?: { kycStatus: string; profileImageKey: string | null };
   }) => ({
     id: t.userId, displayName: t.displayName, gender: t.gender, age: t.age, bio: t.bio, heightCm: t.heightCm,
-    style: t.style, languages: t.languages, hourlyPrice: t.hourlyPrice, photos: t.photos,
+    style: t.style, languages: t.languages, hourlyPrice: t.hourlyPrice,
+    photos: t.photos.length ? t.photos : t.user?.profileImageKey ? [`/api/users/${t.userId}/avatar`] : [],
     activities: t.activities, availability: t.availability, district: t.district,
-    sticker: t.sticker, availableNow: t.availableNow, ratingAvg: t.ratingAvg, ratingCount: t.ratingCount, verified: t.user?.idStatus === "APPROVED",
+    sticker: t.sticker, availableNow: t.availableNow, ratingAvg: t.ratingAvg, ratingCount: t.ratingCount, verified: t.user?.kycStatus === "APPROVED",
   });
 
   const listQuery = z.object({
@@ -183,14 +207,14 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     const rows = await prisma.talentProfile.findMany({
       where: {
         published: true,
-        user: { status: "ACTIVE" },
+        user: { status: "ACTIVE", kycStatus: "APPROVED" as const },
         ...(gender ? { gender } : {}),
         ...(activity ? { activities: { has: activity } } : {}),
         ...(q ? { displayName: { contains: q, mode: "insensitive" as const } } : {}),
         ...(minRating ? { ratingAvg: { gte: minRating }, ratingCount: { gt: 0 } } : {}),
         hourlyPrice: { gte: minPrice ?? 0, ...(maxPrice !== undefined ? { lte: maxPrice } : {}) },
       },
-      include: { user: { select: { idStatus: true } } },
+      include: { user: { select: { kycStatus: true, profileImageKey: true } } },
       orderBy: sort === "rating" ? [{ ratingAvg: "desc" }, { ratingCount: "desc" }, { displayName: "asc" }] : { displayName: "asc" },
     });
     return rows.map(publicTalent);
@@ -198,8 +222,8 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
 
   app.get("/api/talents/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
-    const t = await prisma.talentProfile.findUnique({ where: { userId: id }, include: { user: { select: { idStatus: true, status: true } } } });
-    if (!t || !t.published || t.user.status !== "ACTIVE") return reply.code(404).send({ error: "not_found" });
+    const t = await prisma.talentProfile.findUnique({ where: { userId: id }, include: { user: { select: { kycStatus: true, status: true, profileImageKey: true } } } });
+    if (!t || !t.published || t.user.status !== "ACTIVE" || !isPubliclyVisible(t.user.kycStatus)) return reply.code(404).send({ error: "not_found" });
     return publicTalent(t);
   });
 
@@ -219,7 +243,7 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     availableNow: z.boolean().default(false),
     published: z.boolean().default(true),
   });
-  app.put("/api/talent/profile", { preHandler: auth }, async (req, reply) => {
+  app.put("/api/talent/profile", { preHandler: approved }, async (req, reply) => {
     if (req.user.role !== "TALENT") return reply.code(403).send({ error: "forbidden" });
     const p = profileSchema.safeParse(req.body);
     if (!p.success) return reply.code(400).send({ error: "invalid", issues: p.error.issues });
@@ -231,14 +255,14 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
   });
 
   // ---------- saved ----------
-  app.get("/api/saved", { preHandler: auth }, async (req) => {
+  app.get("/api/saved", { preHandler: approved }, async (req) => {
     const rows = await prisma.savedTalent.findMany({
       where: { userId: req.user.id },
-      include: { talent: { include: { user: { select: { idStatus: true } } } } },
+      include: { talent: { include: { user: { select: { kycStatus: true, profileImageKey: true } } } } },
     });
     return rows.map((r) => publicTalent(r.talent));
   });
-  app.put("/api/saved/:talentId", { preHandler: auth }, async (req, reply) => {
+  app.put("/api/saved/:talentId", { preHandler: approved }, async (req, reply) => {
     const { talentId } = req.params as { talentId: string };
     if (!(await prisma.talentProfile.findUnique({ where: { userId: talentId } })))
       return reply.code(404).send({ error: "not_found" });
@@ -247,7 +271,7 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     });
     return { ok: true };
   });
-  app.delete("/api/saved/:talentId", { preHandler: auth }, async (req) => {
+  app.delete("/api/saved/:talentId", { preHandler: approved }, async (req) => {
     const { talentId } = req.params as { talentId: string };
     await prisma.savedTalent.deleteMany({ where: { userId: req.user.id, talentId } });
     return { ok: true };
@@ -264,7 +288,7 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     note: z.string().max(500).default(""),
     conductAccepted: z.literal(true),
   });
-  app.post("/api/bookings", { preHandler: auth }, async (req, reply) => {
+  app.post("/api/bookings", { preHandler: approved }, async (req, reply) => {
     if (req.user.role !== "CUSTOMER") return reply.code(403).send({ error: "forbidden" });
     const p = bookingSchema.safeParse(req.body);
     if (!p.success) return reply.code(400).send({ error: "invalid", issues: p.error.issues });
@@ -288,7 +312,7 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     talent: { select: { id: true, name: true, talent: { select: { displayName: true, photos: true } } } },
   } as const;
 
-  app.get("/api/bookings", { preHandler: auth }, async (req) => {
+  app.get("/api/bookings", { preHandler: approved }, async (req) => {
     return prisma.booking.findMany({
       where: { OR: [{ customerId: req.user.id }, { talentId: req.user.id }] },
       include: bookingInclude,
@@ -296,7 +320,7 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     });
   });
 
-  app.post("/api/bookings/:id/status", { preHandler: auth }, async (req, reply) => {
+  app.post("/api/bookings/:id/status", { preHandler: approved }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const p = z.object({ status: z.enum(["ACCEPTED", "DECLINED", "CANCELLED", "COMPLETED"]) }).safeParse(req.body);
     if (!p.success) return reply.code(400).send({ error: "invalid" });
@@ -314,14 +338,14 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     if (!b || !actorFor(userId, b)) return null;
     return b;
   }
-  app.get("/api/bookings/:id/messages", { preHandler: auth }, async (req, reply) => {
+  app.get("/api/bookings/:id/messages", { preHandler: approved }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const b = await loadChatBooking(req.user.id, id);
     if (!b) return reply.code(404).send({ error: "not_found" });
     if (!chatOpen(b.status)) return reply.code(403).send({ error: "chat_locked" });
     return prisma.message.findMany({ where: { bookingId: id }, orderBy: { createdAt: "asc" }, take: 500 });
   });
-  app.post("/api/bookings/:id/messages", { preHandler: auth, config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (req, reply) => {
+  app.post("/api/bookings/:id/messages", { preHandler: approved, config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const p = z.object({ body: z.string().trim().min(1).max(1000) }).safeParse(req.body);
     if (!p.success) return reply.code(400).send({ error: "invalid" });
@@ -348,7 +372,7 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     comment: z.string().trim().max(500).default(""),
   });
 
-  app.post("/api/bookings/:id/review", { preHandler: auth, config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req, reply) => {
+  app.post("/api/bookings/:id/review", { preHandler: approved, config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const p = reviewBody.safeParse(req.body);
     if (!p.success) return reply.code(400).send({ error: "invalid", issues: p.error.issues });
@@ -363,7 +387,7 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     return review;
   });
 
-  app.put("/api/reviews/:id", { preHandler: auth }, async (req, reply) => {
+  app.put("/api/reviews/:id", { preHandler: approved }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const p = reviewBody.safeParse(req.body);
     if (!p.success) return reply.code(400).send({ error: "invalid", issues: p.error.issues });
@@ -377,7 +401,7 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     return updated;
   });
 
-  app.post("/api/reviews/:id/reply", { preHandler: auth, config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (req, reply) => {
+  app.post("/api/reviews/:id/reply", { preHandler: approved, config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const p = z.object({ reply: z.string().trim().min(1).max(500) }).safeParse(req.body);
     if (!p.success) return reply.code(400).send({ error: "invalid" });
@@ -410,7 +434,7 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     };
   });
 
-  app.post("/api/reviews/:id/report", { preHandler: auth, config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req, reply) => {
+  app.post("/api/reviews/:id/report", { preHandler: approved, config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const p = z.object({ reason: z.string().trim().max(200).default("") }).safeParse(req.body ?? {});
     if (!p.success) return reply.code(400).send({ error: "invalid" });
@@ -423,27 +447,146 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     return { ok: true };
   });
 
-  // ---------- ID verification ----------
-  app.post("/api/verification", { preHandler: auth }, async (req, reply) => {
-    const keys: Record<string, string> = {};
-    for await (const part of req.parts()) {
-      if (part.type !== "file") continue;
-      if (!["idImage", "selfie"].includes(part.fieldname)) { part.file.resume(); continue; }
-      if (!["image/jpeg", "image/png", "image/webp"].includes(part.mimetype)) {
-        part.file.resume();
-        return reply.code(400).send({ error: "bad_file_type" });
-      }
-      const key = `${randomUUID()}${part.mimetype === "image/png" ? ".png" : part.mimetype === "image/webp" ? ".webp" : ".jpg"}`;
-      await pipeline(part.file, createWriteStream(path.join(UPLOAD_DIR, key)));
-      if (part.file.truncated) return reply.code(413).send({ error: "file_too_large" });
-      keys[part.fieldname] = key;
-    }
-    if (!keys.idImage || !keys.selfie) return reply.code(400).send({ error: "both_images_required" });
-    await prisma.user.update({
-      where: { id: req.user.id },
-      data: { idImageKey: keys.idImage, selfieKey: keys.selfie, idStatus: "PENDING" },
+  // ---------- KYC: email / phone OTP ----------
+  const channelParam = z.enum(["email", "phone"]);
+  const channelOf = (c: "email" | "phone") => (c === "email" ? ("EMAIL" as const) : ("PHONE" as const));
+
+  app.post("/api/verify/:channel/send", { preHandler: auth, config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req, reply) => {
+    const ch = channelParam.safeParse((req.params as { channel: string }).channel);
+    if (!ch.success) return reply.code(404).send({ error: "not_found" });
+    const channel = channelOf(ch.data);
+    const u = await prisma.user.findUniqueOrThrow({ where: { id: req.user.id } });
+    const target = ch.data === "email" ? u.email : u.phone;
+    if (!target) return reply.code(400).send({ error: "no_target" });
+    if (ch.data === "email" ? u.emailVerifiedAt : u.phoneVerifiedAt) return reply.code(409).send({ error: "already_verified" });
+
+    const last = await prisma.otpCode.findFirst({ where: { userId: u.id, channel }, orderBy: { createdAt: "desc" } });
+    const wait = resendWaitMs(last?.createdAt ?? null);
+    if (wait > 0) return reply.code(429).send({ error: "too_soon", retryAfterMs: wait });
+    const sentLastHour = await prisma.otpCode.count({ where: { userId: u.id, channel, createdAt: { gte: new Date(Date.now() - 3600_000) } } });
+    if (sentLastHour >= OTP_MAX_PER_HOUR) return reply.code(429).send({ error: "too_many" });
+
+    const code = generateOtp();
+    const row = await prisma.otpCode.create({
+      data: { userId: u.id, channel, target, codeHash: hashOtp(code, otpSecret(), u.id, channel, target), expiresAt: new Date(Date.now() + OTP_TTL_MS) },
     });
-    return { idStatus: "PENDING" };
+    try {
+      const m = otpMessage(u.locale === "en" ? "en" : "vi", code);
+      if (ch.data === "email") await sendEmail(target, m.subject, m.text);
+      else await sendSms(target, m.text);
+    } catch (e) {
+      await prisma.otpCode.delete({ where: { id: row.id } });
+      req.log.error({ err: (e as Error).message }, "otp delivery failed");
+      return reply.code(502).send({ error: "send_failed" });
+    }
+    // The code itself is never returned to the client.
+    return { sent: true, expiresInSec: OTP_TTL_MS / 1000, resendInSec: 60 };
+  });
+
+  app.post("/api/verify/:channel/confirm", { preHandler: auth, config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (req, reply) => {
+    const ch = channelParam.safeParse((req.params as { channel: string }).channel);
+    const body = z.object({ code: z.string().regex(/^\d{6}$/) }).safeParse(req.body);
+    if (!ch.success) return reply.code(404).send({ error: "not_found" });
+    if (!body.success) return reply.code(400).send({ error: "invalid" });
+    const channel = channelOf(ch.data);
+    const u = await prisma.user.findUniqueOrThrow({ where: { id: req.user.id } });
+    const target = ch.data === "email" ? u.email : u.phone;
+    const row = target ? await prisma.otpCode.findFirst({ where: { userId: u.id, channel, target, usedAt: null }, orderBy: { createdAt: "desc" } }) : null;
+    if (!row) return reply.code(400).send({ error: "no_code" });
+    const state = checkOtpState(row);
+    if (state !== "ok") return reply.code(state === "locked" ? 429 : 400).send({ error: `code_${state}` });
+    if (!otpMatches(body.data.code, row.codeHash, otpSecret(), u.id, channel, row.target)) {
+      const updated = await prisma.otpCode.update({ where: { id: row.id }, data: { attempts: { increment: 1 } } });
+      return reply.code(400).send({ error: "wrong_code", attemptsLeft: Math.max(0, OTP_MAX_ATTEMPTS - updated.attempts) });
+    }
+    await prisma.otpCode.update({ where: { id: row.id }, data: { usedAt: new Date() } });
+    await prisma.user.update({ where: { id: u.id }, data: ch.data === "email" ? { emailVerifiedAt: new Date() } : { phoneVerifiedAt: new Date() } });
+    return { verified: true };
+  });
+
+  // ---------- KYC: documents ----------
+  const KYC_FIELDS = { idImage: "idImageKey", studentCard: "studentCardKey", profileImage: "profileImageKey" } as const;
+  const removeFile = (key: string | null | undefined) => (key ? unlink(path.join(UPLOAD_DIR, key)).catch(() => {}) : Promise.resolve());
+
+  app.post("/api/kyc/submit", { preHandler: auth, config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req, reply) => {
+    if (req.user.role === "ADMIN") return reply.code(400).send({ error: "admin_exempt" });
+    const newKeys: Partial<Record<keyof typeof KYC_FIELDS, string>> = {};
+    const discard = () => Promise.all(Object.values(newKeys).map(removeFile));
+    try {
+      for await (const part of req.parts()) {
+        if (part.type !== "file") continue;
+        if (!(part.fieldname in KYC_FIELDS)) { part.file.resume(); continue; }
+        const buf = await part.toBuffer();
+        const ext = sniffImage(buf);
+        if (!ext) { await discard(); return reply.code(400).send({ error: "bad_file_type", field: part.fieldname }); }
+        const key = `${randomUUID()}.${ext}`;
+        await writeFile(path.join(UPLOAD_DIR, key), buf);
+        newKeys[part.fieldname as keyof typeof KYC_FIELDS] = key;
+      }
+    } catch (e) {
+      await discard();
+      if ((e as { code?: string }).code === "FST_REQ_FILE_TOO_LARGE") return reply.code(413).send({ error: "file_too_large" });
+      throw e;
+    }
+
+    const u = await prisma.user.findUniqueOrThrow({ where: { id: req.user.id } });
+    const merged = {
+      idImageKey: newKeys.idImage ?? u.idImageKey,
+      studentCardKey: newKeys.studentCard ?? u.studentCardKey,
+      profileImageKey: newKeys.profileImage ?? u.profileImageKey,
+    };
+    const blocker = submitBlocker({
+      kyc: u.kycStatus, emailVerified: !!u.emailVerifiedAt, phoneVerified: !!u.phoneVerifiedAt,
+      hasId: !!merged.idImageKey, hasStudentCard: !!merged.studentCardKey, hasProfileImage: !!merged.profileImageKey,
+    });
+    if (blocker) {
+      await discard();
+      return reply.code(blocker === "not_allowed" ? 409 : 400).send({ error: blocker });
+    }
+    await prisma.user.update({
+      where: { id: u.id },
+      data: { ...merged, kycStatus: "IN_REVIEW", kycSubmittedAt: new Date(), kycRejectReason: null },
+    });
+    // Replaced documents are deleted so old personal data does not linger on disk.
+    if (newKeys.idImage) await removeFile(u.idImageKey);
+    if (newKeys.studentCard) await removeFile(u.studentCardKey);
+    if (newKeys.profileImage) await removeFile(u.profileImageKey);
+
+    await notifyUser(u.id, "KYC_SUBMITTED");
+    const admins = await prisma.user.findMany({ where: { role: "ADMIN", status: "ACTIVE" }, select: { id: true } });
+    await Promise.all(admins.map((a) => notifyUser(a.id, "KYC_NEW_SUBMISSION", { name: u.name }, { email: false })));
+    return { kycStatus: "IN_REVIEW" };
+  });
+
+  /** Talent profile photos fall back to the approved profile image. Customers' images are never public. */
+  app.get("/api/users/:id/avatar", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const u = await prisma.user.findUnique({ where: { id }, select: { role: true, kycStatus: true, profileImageKey: true, status: true } });
+    const key = u?.profileImageKey;
+    if (!u || !key || u.role !== "TALENT" || u.status !== "ACTIVE" || !isPubliclyVisible(u.kycStatus) || !existsSync(path.join(UPLOAD_DIR, key)))
+      return reply.code(404).send({ error: "not_found" });
+    const ext = path.extname(key);
+    reply.header("Cache-Control", "public, max-age=300");
+    reply.type(ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg");
+    return reply.send(createReadStream(path.join(UPLOAD_DIR, key)));
+  });
+
+  // ---------- notifications ----------
+  app.get("/api/notifications", { preHandler: auth }, async (req) => {
+    const [items, unread] = await Promise.all([
+      prisma.notification.findMany({ where: { userId: req.user.id }, orderBy: { createdAt: "desc" }, take: 50 }),
+      prisma.notification.count({ where: { userId: req.user.id, readAt: null } }),
+    ]);
+    return { unread, items };
+  });
+  app.post("/api/notifications/read-all", { preHandler: auth }, async (req) => {
+    await prisma.notification.updateMany({ where: { userId: req.user.id, readAt: null }, data: { readAt: new Date() } });
+    return { ok: true };
+  });
+  app.post("/api/notifications/:id/read", { preHandler: auth }, async (req) => {
+    const { id } = req.params as { id: string };
+    await prisma.notification.updateMany({ where: { id, userId: req.user.id, readAt: null }, data: { readAt: new Date() } });
+    return { ok: true };
   });
 
   // ---------- SOS ----------
@@ -466,17 +609,22 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
   });
 
   // ---------- admin ----------
-  app.get("/api/admin/verifications", { preHandler: adminOnly }, async () =>
-    prisma.user.findMany({
-      where: { idStatus: "PENDING" },
-      select: { id: true, name: true, email: true, role: true, createdAt: true },
-      orderBy: { createdAt: "asc" },
-    }));
+  app.get("/api/admin/kyc", { preHandler: adminOnly }, async () => {
+    const rows = await prisma.user.findMany({
+      where: { kycStatus: "IN_REVIEW" }, orderBy: { kycSubmittedAt: "asc" },
+      select: {
+        id: true, name: true, email: true, phone: true, gender: true, role: true,
+        province: true, ward: true, addressLine: true, createdAt: true, kycSubmittedAt: true,
+        emailVerifiedAt: true, phoneVerifiedAt: true,
+      },
+    });
+    return rows.map(({ emailVerifiedAt, phoneVerifiedAt, ...r }) => ({ ...r, emailVerified: !!emailVerifiedAt, phoneVerified: !!phoneVerifiedAt }));
+  });
 
-  app.get("/api/admin/verifications/:userId/:kind", { preHandler: adminOnly }, async (req, reply) => {
+  app.get("/api/admin/kyc/:userId/:kind", { preHandler: adminOnly }, async (req, reply) => {
     const { userId, kind } = req.params as { userId: string; kind: string };
     const u = await prisma.user.findUnique({ where: { id: userId } });
-    const key = kind === "id" ? u?.idImageKey : kind === "selfie" ? u?.selfieKey : null;
+    const key = kind === "id" ? u?.idImageKey : kind === "student" ? u?.studentCardKey : kind === "profile" ? u?.profileImageKey : null;
     if (!key || !existsSync(path.join(UPLOAD_DIR, key))) return reply.code(404).send({ error: "not_found" });
     const ext = path.extname(key);
     reply.header("Cache-Control", "private, no-store");
@@ -484,13 +632,24 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     return reply.send(createReadStream(path.join(UPLOAD_DIR, key)));
   });
 
-  app.post("/api/admin/verifications/:userId", { preHandler: adminOnly }, async (req, reply) => {
+  app.post("/api/admin/kyc/:userId", { preHandler: adminOnly }, async (req, reply) => {
     const { userId } = req.params as { userId: string };
-    const p = z.object({ approve: z.boolean() }).safeParse(req.body);
+    const p = z.discriminatedUnion("approve", [
+      z.object({ approve: z.literal(true) }),
+      z.object({ approve: z.literal(false), reason: z.string().trim().min(3).max(300) }),
+    ]).safeParse(req.body);
     if (!p.success) return reply.code(400).send({ error: "invalid" });
     const u = await prisma.user.findUnique({ where: { id: userId } });
-    if (!u || u.idStatus !== "PENDING") return reply.code(409).send({ error: "not_pending" });
-    await prisma.user.update({ where: { id: userId }, data: { idStatus: p.data.approve ? "APPROVED" : "REJECTED" } });
+    if (!u || !mayReview(u.kycStatus)) return reply.code(409).send({ error: "not_in_review" });
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        kycStatus: p.data.approve ? "APPROVED" : "REJECTED", kycReviewedAt: new Date(), kycReviewedBy: req.user.id,
+        kycRejectReason: p.data.approve ? null : p.data.reason,
+      },
+    });
+    if (p.data.approve) await notifyUser(userId, "KYC_APPROVED");
+    else await notifyUser(userId, "KYC_REJECTED", { reason: p.data.reason });
     return { ok: true };
   });
 
@@ -532,7 +691,7 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
 
   app.get("/api/admin/users", { preHandler: adminOnly }, async () =>
     prisma.user.findMany({
-      select: { id: true, name: true, email: true, role: true, status: true, idStatus: true, createdAt: true },
+      select: { id: true, name: true, email: true, role: true, status: true, kycStatus: true, createdAt: true },
       orderBy: { createdAt: "desc" }, take: 200,
     }));
   app.post("/api/admin/users/:id/status", { preHandler: adminOnly }, async (req, reply) => {
@@ -540,7 +699,10 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     const p = z.object({ status: z.enum(["ACTIVE", "SUSPENDED"]) }).safeParse(req.body);
     if (!p.success) return reply.code(400).send({ error: "invalid" });
     if (id === req.user.id) return reply.code(400).send({ error: "cannot_suspend_self" });
+    const target = await prisma.user.findUnique({ where: { id }, select: { status: true } });
+    if (!target) return reply.code(404).send({ error: "not_found" });
     await prisma.user.update({ where: { id }, data: { status: p.data.status } });
+    if (target.status !== p.data.status) await notifyUser(id, p.data.status === "SUSPENDED" ? "ACCOUNT_SUSPENDED" : "ACCOUNT_REACTIVATED");
     return { ok: true };
   });
 

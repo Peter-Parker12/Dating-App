@@ -9,7 +9,7 @@ import { useRequireAuth } from "@/lib/useRequireAuth";
 
 export default function Bookings() {
   const { t } = useI18n();
-  const { me } = useRequireAuth();
+  const { me } = useRequireAuth(undefined, { approved: true });
   const [items, setItems] = useState<Booking[] | null>(null);
   const [reviewing, setReviewing] = useState<string | null>(null);
   const load = useCallback(() => api<Booking[]>("/bookings").then(setItems).catch(() => setItems([])), []);

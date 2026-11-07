@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Heart, RotateCcw, Search } from "lucide-react";
 import { api, type Activity, type Talent } from "@/lib/api";
-import { useAuth } from "@/lib/auth";
+import { isApproved, useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import TalentCard from "@/components/TalentCard";
 import { activityIcon } from "@/components/activityIcons";
@@ -22,7 +22,7 @@ export default function Explore() {
 
   useEffect(() => { void api<Activity[]>("/activities").then(setActivities).catch(() => {}); }, []);
   useEffect(() => {
-    if (me?.role !== "CUSTOMER") return;
+    if (me?.role !== "CUSTOMER" || !isApproved(me)) return;
     void api<Talent[]>("/saved").then((s) => setSaved(new Set(s.map((x) => x.id)))).catch(() => {});
   }, [me]);
 
@@ -109,7 +109,7 @@ export default function Explore() {
           <Heart size={15} fill="currentColor" /> {t("explore.tabAll")}
           <span className="rounded-full bg-brand-500 px-2 text-xs font-extrabold">{talents?.length ?? 0}</span>
         </span>
-        {me?.role === "CUSTOMER" && (
+        {me?.role === "CUSTOMER" && isApproved(me) && (
           <a href="/saved" className="inline-flex items-center gap-2 rounded-full border border-line bg-white px-4 py-2 text-sm font-bold text-muted hover:border-brand-200 hover:text-brand-600">
             {t("nav.saved")} <span className="rounded-full bg-brand-100 px-2 text-xs font-extrabold text-brand-600">{saved.size}</span>
           </a>
@@ -118,7 +118,7 @@ export default function Explore() {
       {talents === null ? <p>{t("common.loading")}</p> : talents.length === 0 ? <p className="text-muted">{t("explore.empty")}</p> : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-5">
           {talents.map((x) => (
-            <TalentCard key={x.id} talent={x} actLabel={actLabel} saved={saved.has(x.id)} onToggleSave={me?.role === "CUSTOMER" ? () => void toggle(x.id) : undefined} />
+            <TalentCard key={x.id} talent={x} actLabel={actLabel} saved={saved.has(x.id)} onToggleSave={me?.role === "CUSTOMER" && isApproved(me) ? () => void toggle(x.id) : undefined} />
           ))}
         </div>
       )}

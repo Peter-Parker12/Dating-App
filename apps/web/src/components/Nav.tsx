@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { CalendarDays, Compass, Heart, House, ShieldCheck, User } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useI18n, type Key } from "@/lib/i18n";
+import NotificationBell from "./NotificationBell";
 
 export default function Nav() {
   const { me, logout } = useAuth();
@@ -31,17 +32,18 @@ export default function Nav() {
             <span className="flex h-10 w-10 items-center justify-center rounded-[13px] bg-grad-primary text-white shadow-[0_6px_16px_rgba(244,63,122,.35),inset_0_-3px_0_rgba(0,0,0,.08)]">
               <Heart size={20} fill="currentColor" />
             </span>
-            <span className="hidden text-xl font-black tracking-tight text-ink sm:inline">{t("brand")}</span>
+            <span className="hidden whitespace-nowrap text-xl font-black tracking-tight text-ink lg:inline">{t("brand")}</span>
           </Link>
           <nav className="ml-2 hidden gap-1.5 md:flex">
             {visible.map((l) => (
               <Link key={l.href} href={l.href}
-                className={`rounded-full px-3.5 py-2 text-sm font-semibold transition ${active(l.href) ? "bg-brand-100 text-brand-600" : "text-muted hover:bg-brand-50 hover:text-brand-600"}`}>
+                className={`whitespace-nowrap rounded-full px-2.5 py-2 text-sm font-semibold transition lg:px-3.5 ${active(l.href) ? "bg-brand-100 text-brand-600" : "text-muted hover:bg-brand-50 hover:text-brand-600"}`}>
                 {t(l.label)}
               </Link>
             ))}
           </nav>
           <div className="ml-auto flex items-center gap-2">
+            <NotificationBell />
             <button onClick={() => setLocale(locale === "vi" ? "en" : "vi")} aria-label="Switch language"
               className="rounded-full border border-line-strong bg-brand-50 px-3 py-1.5 text-xs font-extrabold text-brand-600 hover:bg-brand-100">
               {locale === "vi" ? "EN" : "VI"}

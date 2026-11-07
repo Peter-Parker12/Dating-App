@@ -87,7 +87,7 @@ async function seedReviews(talentUserIds: string[]) {
   for (let c = 1; c <= 4; c++) {
     const email = `customer${c}@cungdi.local`;
     customers.push(await prisma.user.upsert({
-      where: { email }, create: { email, name: ["Lan Phương", "Quang Vinh", "Thu Trang", "Đình Nam"][c - 1], passwordHash: pw }, update: {},
+      where: { email }, create: { email, name: ["Lan Phương", "Quang Vinh", "Thu Trang", "Đình Nam"][c - 1], passwordHash: pw, kycStatus: "APPROVED", emailVerifiedAt: new Date(), phoneVerifiedAt: new Date() }, update: {},
     }));
   }
   for (const [i, talentId] of talentUserIds.entries()) {
@@ -122,18 +122,21 @@ async function main() {
   const admin = process.env.ADMIN_EMAIL ?? "admin@cungdi.local";
   await prisma.user.upsert({
     where: { email: admin },
-    create: { email: admin, name: "Admin", role: "ADMIN", passwordHash: await argon2.hash(adminPw) },
+    create: { email: admin, name: "Admin", role: "ADMIN", passwordHash: await argon2.hash(adminPw), kycStatus: "APPROVED" },
     update: {},
   });
 
-  if (process.env.SEED_DEMO === "false") return;
+  if (process.env.SEED_DEMO === "false") {
+    console.log("[seed] SEED_DEMO=false: demo profiles skipped");
+    return;
+  }
   const pw = await demoHash();
   const talentIds: string[] = [];
   for (const [i, t] of talents.entries()) {
     const email = `talent${i + 1}@cungdi.local`;
     const user = await prisma.user.upsert({
       where: { email },
-      create: { email, name: t.name, role: "TALENT", passwordHash: pw, idStatus: "APPROVED" },
+      create: { email, name: t.name, role: "TALENT", passwordHash: pw, kycStatus: "APPROVED", emailVerifiedAt: new Date(), phoneVerifiedAt: new Date() },
       update: {},
     });
     const data = {
@@ -146,6 +149,7 @@ async function main() {
     talentIds.push(user.id);
   }
   await seedReviews(talentIds);
+  console.log(`[seed] demo data ready: ${talentIds.length} talents`);
 }
 
 main().finally(() => prisma.$disconnect());

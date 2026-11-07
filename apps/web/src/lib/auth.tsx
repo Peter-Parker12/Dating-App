@@ -4,7 +4,9 @@ import { api } from "./api";
 
 export interface Me {
   id: string; email: string; name: string; role: "CUSTOMER" | "TALENT" | "ADMIN"; gender: string | null; locale: string;
-  idStatus: "NONE" | "PENDING" | "APPROVED" | "REJECTED";
+  kycStatus: "PENDING" | "IN_REVIEW" | "APPROVED" | "REJECTED";
+  emailVerified: boolean; phoneVerified: boolean; hasId: boolean; hasStudentCard: boolean; hasProfileImage: boolean;
+  kycRejectReason: string | null;
   phone: string | null; province: string | null; ward: string | null; addressLine: string | null;
   talent: null | {
     displayName: string; gender: string; age: number; bio: string; heightCm: number | null; style: string;
@@ -28,3 +30,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 
 export const useAuth = () => useContext(AuthCtx);
+
+/** Admins are exempt from KYC; everyone else must be approved to act. */
+export const isApproved = (me: Me | null) => !!me && (me.role === "ADMIN" || me.kycStatus === "APPROVED");

@@ -8,7 +8,7 @@ import { useRequireAuth } from "@/lib/useRequireAuth";
 export default function Chat({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { t } = useI18n();
-  const { me } = useRequireAuth();
+  const { me } = useRequireAuth(undefined, { approved: true });
   const [msgs, setMsgs] = useState<Message[]>([]);
   const [locked, setLocked] = useState(false);
   const [text, setText] = useState("");

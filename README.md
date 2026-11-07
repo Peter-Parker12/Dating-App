@@ -17,6 +17,17 @@ npm run dev:web    # :3000 (proxies /api and /socket.io to the API)
 npm test
 ```
 
+## Account verification (KYC)
+New accounts are `PENDING`: they can view profiles, and nothing else, until an admin approves them.
+To apply, a user verifies their email and phone (6-digit codes), then uploads an ID photo, student card and
+profile image. Admins review the submission under **Admin > KYC** and approve or reject (with a reason);
+rejected users can resubmit. Users get an in-app notification and an email on every status change. Admins are
+exempt, and the SOS button works for everyone.
+
+Delivery needs configuring in `.env` (see `.env.example`): SMTP for email, Twilio for SMS. Without them,
+codes and notifications are only written to the API log, which is fine for development but means real users
+cannot verify. Demo profiles are seeded as already approved.
+
 ## Deploy (VPS, Docker)
 ```bash
 cp .env.example .env   # fill in secrets

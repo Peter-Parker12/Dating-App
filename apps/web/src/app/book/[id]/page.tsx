@@ -10,7 +10,7 @@ const CONDUCT: Key[] = ["book.c1", "book.c2", "book.c3", "book.c4"];
 export default function Book({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { t, locale } = useI18n();
-  const { me } = useRequireAuth("CUSTOMER");
+  const { me } = useRequireAuth("CUSTOMER", { approved: true });
   const router = useRouter();
   const [acts, setActs] = useState<Activity[]>([]);
   const [step, setStep] = useState<1 | 2>(1);
