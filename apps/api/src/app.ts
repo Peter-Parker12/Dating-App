@@ -21,6 +21,7 @@ import { isPubliclyVisible, isStaff, mayAct, mayReview, sniffImage, submitBlocke
 import { demoteBlocker, promoteBlocker, roleAfterDemotion } from "./staffRules.js";
 import { invalidateEmailConfig, readStoredEmail, resolveEmailConfig, type StoredEmail } from "./emailConfig.js";
 import { encryptSecret } from "./secrets.js";
+import { DAYS, normalizeSlots, slotsForDay } from "./schedule.js";
 import { checkOtpState, generateOtp, hashOtp, otpMatches, OTP_MAX_ATTEMPTS, OTP_MAX_PER_HOUR, OTP_TTL_MS, resendWaitMs } from "./otp.js";
 import { createNotifier, otpMessage, sendEmail, sendEmailStrict, sendSms } from "./notify.js";
 
@@ -169,6 +170,7 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
       emailVerified: !!u.emailVerifiedAt, phoneVerified: !!u.phoneVerifiedAt,
       hasId: !!u.idImageKey, hasStudentCard: !!u.studentCardKey, hasProfileImage: !!u.profileImageKey,
       kycRejectReason: u.kycRejectReason, kycSubmittedAt: u.kycSubmittedAt,
+      lookingFor: u.lookingFor, lookingForNote: u.lookingForNote,
     };
   });
 
@@ -191,13 +193,13 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
   const publicTalent = (t: {
     userId: string; displayName: string; gender: string; age: number; bio: string; heightCm: number | null;
     style: string; languages: string[]; hourlyPrice: number; photos: string[]; activities: string[];
-    availability: string; district: string; sticker: string; availableNow: boolean; ratingAvg: number; ratingCount: number; user?: { kycStatus: string; profileImageKey: string | null };
+    availability: string; district: string; sticker: string; availableNow: boolean; ratingAvg: number; ratingCount: number; schedule: string[]; user?: { kycStatus: string; profileImageKey: string | null };
   }) => ({
     id: t.userId, displayName: t.displayName, gender: t.gender, age: t.age, bio: t.bio, heightCm: t.heightCm,
     style: t.style, languages: t.languages, hourlyPrice: t.hourlyPrice,
     photos: t.photos.length ? t.photos : t.user?.profileImageKey ? [`/api/users/${t.userId}/avatar`] : [],
     activities: t.activities, availability: t.availability, district: t.district,
-    sticker: t.sticker, availableNow: t.availableNow, ratingAvg: t.ratingAvg, ratingCount: t.ratingCount, verified: t.user?.kycStatus === "APPROVED",
+    sticker: t.sticker, availableNow: t.availableNow, ratingAvg: t.ratingAvg, ratingCount: t.ratingCount, schedule: t.schedule, verified: t.user?.kycStatus === "APPROVED",
   });
 
   const listQuery = z.object({
@@ -207,12 +209,13 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     activity: z.string().optional(),
     q: z.string().max(60).optional(),
     minRating: z.coerce.number().min(0).max(5).optional(),
+    day: z.enum(DAYS).optional(),
     sort: z.enum(["name", "rating"]).optional(),
   });
   app.get("/api/talents", async (req, reply) => {
     const p = listQuery.safeParse(req.query);
     if (!p.success) return reply.code(400).send({ error: "invalid" });
-    const { gender, minPrice, maxPrice, activity, q, minRating, sort } = p.data;
+    const { gender, minPrice, maxPrice, activity, q, minRating, sort, day } = p.data;
     const rows = await prisma.talentProfile.findMany({
       where: {
         published: true,
@@ -221,6 +224,7 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
         ...(activity ? { activities: { has: activity } } : {}),
         ...(q ? { displayName: { contains: q, mode: "insensitive" as const } } : {}),
         ...(minRating ? { ratingAvg: { gte: minRating }, ratingCount: { gt: 0 } } : {}),
+        ...(day ? { schedule: { hasSome: slotsForDay(day) } } : {}),
         hourlyPrice: { gte: minPrice ?? 0, ...(maxPrice !== undefined ? { lte: maxPrice } : {}) },
       },
       include: { user: { select: { kycStatus: true, profileImageKey: true } } },
@@ -250,17 +254,60 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     district: z.string().max(60).default(""),
     sticker: z.string().max(40).default(""),
     availableNow: z.boolean().default(false),
+    schedule: z.array(z.string()).max(21).default([]),
     published: z.boolean().default(true),
   });
   app.put("/api/talent/profile", { preHandler: approved }, async (req, reply) => {
     if (req.user.role !== "TALENT") return reply.code(403).send({ error: "forbidden" });
     const p = profileSchema.safeParse(req.body);
     if (!p.success) return reply.code(400).send({ error: "invalid", issues: p.error.issues });
-    const data = { ...p.data, heightCm: p.data.heightCm ?? null };
+    const schedule = normalizeSlots(p.data.schedule);
+    if (!schedule) return reply.code(400).send({ error: "invalid_schedule" });
+    const data = { ...p.data, schedule, heightCm: p.data.heightCm ?? null };
     const t = await prisma.talentProfile.upsert({
       where: { userId: req.user.id }, create: { userId: req.user.id, photos: [], ...data }, update: data,
     });
     return publicTalent(t);
+  });
+
+  // ---------- customers: what they are looking for ----------
+  app.put("/api/me/preferences", { preHandler: approved }, async (req, reply) => {
+    if (req.user.role !== "CUSTOMER") return reply.code(403).send({ error: "forbidden" });
+    const p = z.object({
+      lookingFor: z.array(z.string().max(40)).max(12),
+      lookingForNote: z.string().trim().max(200).default(""),
+    }).safeParse(req.body);
+    if (!p.success) return reply.code(400).send({ error: "invalid" });
+    const known = new Set((await prisma.activity.findMany({ select: { slug: true } })).map((a) => a.slug));
+    const lookingFor = [...new Set(p.data.lookingFor)];
+    if (!lookingFor.every((a) => known.has(a))) return reply.code(400).send({ error: "invalid_activity" });
+    // Same masking as chat, so a note cannot be used to leak phone numbers or links.
+    const u = await prisma.user.update({
+      where: { id: req.user.id }, data: { lookingFor, lookingForNote: maskContacts(p.data.lookingForNote).text },
+    });
+    return { lookingFor: u.lookingFor, lookingForNote: u.lookingForNote };
+  });
+
+  /**
+   * Approved talents (and staff) can browse customers who said what they are looking for.
+   * Only coarse, non-identifying details are shared: given name, province, activities and note.
+   */
+  app.get("/api/customers", { preHandler: approved }, async (req, reply) => {
+    if (req.user.role !== "TALENT" && !isStaff(req.user.role)) return reply.code(403).send({ error: "forbidden" });
+    const q = z.object({ activity: z.string().max(40).optional() }).safeParse(req.query);
+    if (!q.success) return reply.code(400).send({ error: "invalid" });
+    const rows = await prisma.user.findMany({
+      where: {
+        role: "CUSTOMER", status: "ACTIVE", kycStatus: "APPROVED",
+        lookingFor: q.data.activity ? { has: q.data.activity } : { isEmpty: false },
+      },
+      select: { id: true, name: true, province: true, lookingFor: true, lookingForNote: true, createdAt: true },
+      orderBy: { createdAt: "desc" }, take: 100,
+    });
+    return rows.map((r) => ({
+      id: r.id, firstName: r.name.trim().split(/\s+/).pop() ?? "", province: r.province,
+      lookingFor: r.lookingFor, note: r.lookingForNote, since: r.createdAt,
+    }));
   });
 
   // ---------- saved ----------

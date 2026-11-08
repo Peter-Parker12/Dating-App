@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import { useRequireAuth } from "@/lib/useRequireAuth";
 import ReviewList from "@/components/ReviewList";
+import ScheduleGrid from "@/components/ScheduleGrid";
 
 export default function TalentDashboard() {
   const { t, locale } = useI18n();
@@ -13,7 +14,7 @@ export default function TalentDashboard() {
   const [acts, setActs] = useState<Activity[]>([]);
   const [f, setF] = useState({
     displayName: "", gender: "female", age: 20, bio: "", heightCm: "", style: "", languages: "",
-    hourlyPrice: 100000, activities: [] as string[], availability: "", district: "", sticker: "", availableNow: false, published: true,
+    hourlyPrice: 100000, activities: [] as string[], availability: "", district: "", sticker: "", availableNow: false, schedule: [] as string[], published: true,
   });
   const [msg, setMsg] = useState("");
 
@@ -24,7 +25,7 @@ export default function TalentDashboard() {
     setF((cur) => p ? {
       displayName: p.displayName, gender: p.gender, age: p.age, bio: p.bio, heightCm: p.heightCm ? String(p.heightCm) : "",
       style: p.style, languages: p.languages.join(", "), hourlyPrice: p.hourlyPrice, activities: p.activities,
-      availability: p.availability, district: p.district, sticker: p.sticker, availableNow: p.availableNow, published: p.published,
+      availability: p.availability, district: p.district, sticker: p.sticker, availableNow: p.availableNow, schedule: p.schedule, published: p.published,
     } : { ...cur, displayName: me.name, gender: me.gender ?? cur.gender });
   }, [me]);
   if (!me) return <p>{t("common.loading")}</p>;
@@ -63,7 +64,12 @@ export default function TalentDashboard() {
         <div><label className="label">{t("talentdash.sticker")}</label><input maxLength={40} className="input" value={f.sticker} onChange={(e) => setF({ ...f, sticker: e.target.value })} /></div>
       </div>
       <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={f.availableNow} onChange={(e) => setF({ ...f, availableNow: e.target.checked })} />{t("talentdash.now")}</label>
-      <div><label className="label">{t("talent.availability")}</label><input className="input" value={f.availability} onChange={(e) => setF({ ...f, availability: e.target.value })} /></div>
+      <div>
+        <div className="label">{t("sched.title")}</div>
+        <p className="mb-1.5 text-xs text-muted">{t("sched.hint")}</p>
+        <ScheduleGrid value={f.schedule} onChange={(schedule) => setF({ ...f, schedule })} />
+      </div>
+      <div><label className="label">{t("sched.note")}</label><input maxLength={300} className="input" value={f.availability} onChange={(e) => setF({ ...f, availability: e.target.value })} /></div>
       <div>
         <div className="label">{t("talent.activities")}</div>
         <div className="flex flex-wrap gap-2">

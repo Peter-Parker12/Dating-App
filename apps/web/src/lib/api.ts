@@ -37,7 +37,7 @@ export const vnd = (n: number) => `${n.toLocaleString("vi-VN")}đ`;
 export interface Talent {
   id: string; displayName: string; gender: string; age: number; bio: string; heightCm: number | null;
   style: string; languages: string[]; hourlyPrice: number; photos: string[]; activities: string[];
-  availability: string; district: string; sticker: string; availableNow: boolean; ratingAvg: number; ratingCount: number; verified: boolean;
+  availability: string; district: string; sticker: string; availableNow: boolean; ratingAvg: number; ratingCount: number; schedule: string[]; verified: boolean;
 }
 export interface Activity { slug: string; nameVi: string; nameEn: string }
 export interface Booking {
@@ -53,3 +53,4 @@ export interface ReviewItem {
 }
 export interface ReviewSummary { avg: number; count: number; breakdown: number[]; reviews: ReviewItem[] }
 export interface Notice { id: string; type: string; data: Record<string, string> | null; readAt: string | null; createdAt: string }
+export interface CustomerCard { id: string; firstName: string; province: string | null; lookingFor: string[]; note: string; since: string }

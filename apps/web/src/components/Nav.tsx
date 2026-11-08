@@ -17,6 +17,7 @@ export default function Nav() {
     { href: "/bookings", label: "nav.bookings", show: !!me, icon: CalendarDays },
     { href: "/saved", label: "nav.saved", show: me?.role === "CUSTOMER", icon: Heart },
     { href: "/talent", label: "nav.talent", show: me?.role === "TALENT", icon: User },
+    { href: "/customers", label: "nav.customers", show: me?.role === "TALENT" && me.kycStatus === "APPROVED", icon: Compass },
     { href: "/admin", label: "nav.admin", show: me?.role === "ADMIN", icon: ShieldCheck },
     { href: "/admin", label: "nav.review", show: me?.role === "MODERATOR", icon: ShieldCheck },
     { href: "/safety", label: "nav.safety", show: true, icon: ShieldCheck },

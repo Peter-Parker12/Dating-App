@@ -7,10 +7,11 @@ export interface Me {
   kycStatus: "PENDING" | "IN_REVIEW" | "APPROVED" | "REJECTED";
   emailVerified: boolean; phoneVerified: boolean; hasId: boolean; hasStudentCard: boolean; hasProfileImage: boolean;
   kycRejectReason: string | null;
+  lookingFor: string[]; lookingForNote: string;
   phone: string | null; province: string | null; ward: string | null; addressLine: string | null;
   talent: null | {
     displayName: string; gender: string; age: number; bio: string; heightCm: number | null; style: string;
-    languages: string[]; hourlyPrice: number; activities: string[]; availability: string; district: string; sticker: string; availableNow: boolean; published: boolean;
+    languages: string[]; hourlyPrice: number; activities: string[]; availability: string; district: string; sticker: string; availableNow: boolean; schedule: string[]; published: boolean;
   };
 }
 

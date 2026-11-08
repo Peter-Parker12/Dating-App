@@ -6,6 +6,7 @@ import { isApproved, useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import Avatar from "@/components/Avatar";
 import ReviewList from "@/components/ReviewList";
+import ScheduleGrid from "@/components/ScheduleGrid";
 import { Stars } from "@/components/Stars";
 
 export default function TalentPage({ params }: { params: Promise<{ id: string }> }) {
@@ -34,7 +35,6 @@ export default function TalentPage({ params }: { params: Promise<{ id: string }>
     [t("talent.height"), talent.heightCm ? `${talent.heightCm} cm` : "-"],
     [t("talent.style"), talent.style || "-"],
     [t("talent.languages"), talent.languages.join(", ") || "-"],
-    [t("talent.availability"), talent.availability || "-"],
   ];
 
   return (
@@ -60,10 +60,15 @@ export default function TalentPage({ params }: { params: Promise<{ id: string }>
           )}
           <div className="mt-1 text-lg font-extrabold text-brand-600">{vnd(talent.hourlyPrice)} <span className="text-sm font-medium text-muted">{t("talent.perHour")}</span></div>
         </div>
-        <p className="whitespace-pre-line rounded-md bg-brand-50 p-3 text-sm italic">{talent.bio}</p>
+        {talent.bio && <p className="whitespace-pre-line rounded-md bg-brand-50 p-3 text-sm italic">{talent.bio}</p>}
         <dl className="grid gap-3 text-sm sm:grid-cols-2">
           {rows.map(([k, v]) => (<div key={k}><dt className="text-xs font-bold text-muted">{k}</dt><dd className="font-semibold text-ink">{v}</dd></div>))}
         </dl>
+        <div>
+          <div className="mb-1.5 text-xs font-bold text-muted">{t("sched.title")}</div>
+          {talent.schedule.length ? <ScheduleGrid value={talent.schedule} /> : <p className="text-sm text-muted">{t("sched.none")}</p>}
+          {talent.availability && <p className="mt-1.5 text-sm">{talent.availability}</p>}
+        </div>
         <div>
           <div className="mb-1.5 text-xs font-bold text-muted">{t("talent.activities")}</div>
           <div className="flex flex-wrap gap-2">{talent.activities.map((a) => <span key={a} className="chip-pink">{actName(a)}</span>)}</div>

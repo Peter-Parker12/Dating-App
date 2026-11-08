@@ -81,15 +81,48 @@ const reviewPool: { rating: number; comment: string; reply?: string }[] = [
   { rating: 5, comment: "Rất tinh tế và biết lắng nghe. Cảm ơn bạn vì một buổi tối dễ chịu." },
 ];
 
-async function seedReviews(talentUserIds: string[]) {
+const days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+const slot = (ds: string[], bs: string[]) => ds.flatMap((d) => bs.map((b) => `${d}:${b}`));
+const allBlocks = ["morning", "afternoon", "evening"];
+// A few realistic weekly patterns, handed out round-robin to the demo talents.
+const schedulePatterns: string[][] = [
+  [...slot(days.slice(0, 5), ["evening"]), ...slot(["sat", "sun"], allBlocks)],
+  slot(["sat", "sun"], allBlocks),
+  slot(days.slice(0, 5), ["afternoon", "evening"]),
+  [...slot(["mon", "wed", "fri"], ["evening"]), ...slot(["sat"], ["afternoon", "evening"])],
+  [...slot(["tue", "thu"], ["morning"]), ...slot(["sun"], allBlocks)],
+];
+
+// Demo customers and what they are looking for (shown to approved talents).
+const demoCustomers = [
+  { name: "Lan Phương", acts: ["cafe", "study"], note: "Mình cần người cùng học và ôn thi cuối kỳ." },
+  { name: "Quang Vinh", acts: ["party", "family"], note: "Tìm bạn đồng hành đi tiệc công ty cuối tháng." },
+  { name: "Thu Trang", acts: ["cafe", "online-chat"], note: "Muốn có người trò chuyện, đi cà phê cuối tuần." },
+  { name: "Đình Nam", acts: ["gym"], note: "Cần bạn tập gym buổi sáng." },
+  { name: "Mai Anh", acts: ["temple", "cafe"], note: "Đi chùa đầu tháng, sau đó cà phê nhẹ nhàng." },
+  { name: "Hoàng Yến", acts: ["family"], note: "Ra mắt gia đình vào dịp Tết, cần người lịch sự." },
+  { name: "Bảo Châu", acts: ["study", "online-chat"], note: "Ôn IELTS và muốn tâm sự những lúc áp lực." },
+  { name: "Tuấn Anh", acts: ["party", "cafe", "gym"], note: "Thích hoạt động nhóm, đi chơi cuối tuần." },
+];
+
+async function seedCustomers(): Promise<{ id: string }[]> {
   const pw = await demoHash();
-  const customers = [];
-  for (let c = 1; c <= 4; c++) {
-    const email = `customer${c}@cungdi.local`;
-    customers.push(await prisma.user.upsert({
-      where: { email }, create: { email, name: ["Lan Phương", "Quang Vinh", "Thu Trang", "Đình Nam"][c - 1], passwordHash: pw, kycStatus: "APPROVED", emailVerifiedAt: new Date(), phoneVerifiedAt: new Date() }, update: {},
+  const out = [];
+  for (const [i, c] of demoCustomers.entries()) {
+    const email = `customer${i + 1}@cungdi.local`;
+    const profile = { lookingFor: c.acts, lookingForNote: c.note, province: "Thành phố Hồ Chí Minh" };
+    out.push(await prisma.user.upsert({
+      where: { email },
+      create: { email, name: c.name, passwordHash: pw, kycStatus: "APPROVED", emailVerifiedAt: new Date(), phoneVerifiedAt: new Date(), ...profile },
+      // Demo customers are always approved so the talent-side list is populated, even on older databases.
+      update: { kycStatus: "APPROVED", ...profile },
     }));
   }
+  return out;
+}
+
+async function seedReviews(talentUserIds: string[]) {
+  const customers = (await seedCustomers()).slice(0, 4);
   for (const [i, talentId] of talentUserIds.entries()) {
     const n = 2 + (i % 3);
     for (let k = 0; k < n; k++) {
@@ -142,7 +175,8 @@ async function main() {
     const data = {
       displayName: t.name, gender: t.gender, age: t.age, hourlyPrice: t.price, style: t.style,
       languages: t.langs, activities: t.acts, heightCm: t.height, bio: t.bio, district: t.district,
-      sticker: t.sticker, availableNow: t.now ?? false, availability: "Tối thứ 2-6, cả ngày cuối tuần",
+      sticker: t.sticker, availableNow: t.now ?? false, availability: "",
+      schedule: schedulePatterns[i % schedulePatterns.length],
       photos: Array.from({ length: t.photos }, (_, n) => `/photos/${t.slug}-${n + 1}.jpg`),
     };
     await prisma.talentProfile.upsert({ where: { userId: user.id }, create: { userId: user.id, ...data }, update: data });

@@ -6,6 +6,8 @@ import { isApproved, useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import TalentCard from "@/components/TalentCard";
 import { activityIcon } from "@/components/activityIcons";
+import { DAYS } from "@/lib/schedule";
+import type { Key } from "@/lib/i18n";
 
 export default function Explore() {
   const { t, locale } = useI18n();
@@ -19,6 +21,7 @@ export default function Explore() {
   const [q, setQ] = useState("");
   const [minRating, setMinRating] = useState("");
   const [sort, setSort] = useState("name");
+  const [day, setDay] = useState("");
 
   useEffect(() => { void api<Activity[]>("/activities").then(setActivities).catch(() => {}); }, []);
   useEffect(() => {
@@ -34,9 +37,10 @@ export default function Explore() {
     if (q) params.set("q", q);
     if (minRating) params.set("minRating", minRating);
     if (sort === "rating") params.set("sort", "rating");
+    if (day) params.set("day", day);
     const h = setTimeout(() => void api<Talent[]>(`/talents?${params}`).then(setTalents).catch(() => setTalents([])), 200);
     return () => clearTimeout(h);
-  }, [gender, activity, maxPrice, q, minRating, sort]);
+  }, [gender, activity, maxPrice, q, minRating, sort, day]);
 
   const actLabel = (slug: string) => { const a = activities.find((x) => x.slug === slug); return a ? (locale === "vi" ? a.nameVi : a.nameEn) : slug; };
 
@@ -66,7 +70,7 @@ export default function Explore() {
             );
           })}
         </div>
-        <div className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1fr_1fr_auto]">
+        <div className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_auto]">
           <div>
             <label className="label">{t("explore.search")}</label>
             <div className="relative">
@@ -94,12 +98,19 @@ export default function Explore() {
             </select>
           </div>
           <div>
+            <label className="label">{t("sched.day")}</label>
+            <select className="input" value={day} onChange={(e) => setDay(e.target.value)}>
+              <option value="">{t("sched.anyDay")}</option>
+              {DAYS.map((d) => <option key={d} value={d}>{t(`day.${d}` as Key)}</option>)}
+            </select>
+          </div>
+          <div>
             <label className="label">{t("rev.sort")}</label>
             <select className="input" value={sort} onChange={(e) => setSort(e.target.value)}>
               <option value="name">{t("rev.sortName")}</option><option value="rating">{t("rev.sortRating")}</option>
             </select>
           </div>
-          <button className="btn-ghost" onClick={() => { setQ(""); setGender(""); setActivity(""); setMaxPrice(""); setMinRating(""); setSort("name"); }}>
+          <button className="btn-ghost" onClick={() => { setQ(""); setGender(""); setActivity(""); setMaxPrice(""); setMinRating(""); setSort("name"); setDay(""); }}>
             <RotateCcw size={15} /> {t("explore.reset")}
           </button>
         </div>

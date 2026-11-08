@@ -17,6 +17,13 @@ npm run dev:web    # :3000 (proxies /api and /socket.io to the API)
 npm test
 ```
 
+## Profiles
+**Talents** list the activities they offer and a weekly availability grid (7 days x morning/afternoon/evening),
+plus an optional note. Explore can filter by the day a talent is free. **Customers** can say what they are looking
+for (activities and a short note); approved talents see these in the "Looking for" list, with only the given name,
+province, activities and note (never full name, phone, email or address). Customers who leave it empty are not listed.
+Prices per service or session are intentionally not included yet.
+
 ## Account verification (KYC)
 New accounts are `PENDING`: they can view profiles, and nothing else, until an admin approves them.
 To apply, a user verifies their email and phone (6-digit codes), then uploads an ID photo, student card and
