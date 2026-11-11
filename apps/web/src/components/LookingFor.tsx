@@ -30,7 +30,7 @@ export default function LookingFor({ me }: { me: Me }) {
       <h2 className="font-bold">{t("look.title")}</h2>
       <p className="text-xs text-muted">{t("look.intro")}</p>
       <div className="flex flex-wrap gap-2">
-        {acts.map((a) => (
+        {acts.filter((a) => a.active || picked.includes(a.slug)).map((a) => (
           <button type="button" key={a.slug} aria-pressed={picked.includes(a.slug)} onClick={() => toggle(a.slug)}
             className={`rounded-full border px-3 py-1 text-xs font-medium ${picked.includes(a.slug) ? "border-brand-600 bg-brand-600 text-white" : "border-line-strong bg-white"}`}>
             {locale === "vi" ? a.nameVi : a.nameEn}

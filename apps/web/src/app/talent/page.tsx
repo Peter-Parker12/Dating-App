@@ -75,7 +75,7 @@ export default function TalentDashboard() {
       <div>
         <div className="label">{t("talent.activities")}</div>
         <div className="flex flex-wrap gap-2">
-          {acts.map((a) => (
+          {acts.filter((a) => a.active || f.activities.includes(a.slug)).map((a) => (
             <button type="button" key={a.slug} onClick={() => toggleAct(a.slug)}
               className={`rounded-full border px-3 py-1 text-xs font-medium ${f.activities.includes(a.slug) ? "border-brand-600 bg-brand-600 text-white" : "border-line-strong bg-white"}`}>
               {locale === "vi" ? a.nameVi : a.nameEn}

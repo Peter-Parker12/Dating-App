@@ -22,6 +22,7 @@ import { demoteBlocker, promoteBlocker, roleAfterDemotion } from "./staffRules.j
 import { invalidateEmailConfig, readStoredEmail, resolveEmailConfig, type StoredEmail } from "./emailConfig.js";
 import { encryptSecret } from "./secrets.js";
 import { DAYS, normalizeSlots, slotsForDay } from "./schedule.js";
+import { ACTIVITY_ICON_KEYS, canDeleteActivity, invalidPicks, moveSlug, nameConflict, slugify, uniqueSlug } from "./activityRules.js";
 import { canAddGallery, GALLERY_MAX, orderPhotos, photoAccess, type PhotoViewer } from "./photoRules.js";
 import { checkOtpState, generateOtp, hashOtp, otpMatches, OTP_MAX_ATTEMPTS, OTP_MAX_PER_HOUR, OTP_TTL_MS, resendWaitMs } from "./otp.js";
 import { createNotifier, sendEmail, sendEmailStrict, sendSms } from "./notify.js";
@@ -189,7 +190,13 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
   });
 
   // ---------- activities ----------
-  app.get("/api/activities", async () => prisma.activity.findMany({ orderBy: { slug: "asc" } }));
+  // Hidden activities are included (active: false) so existing profiles can still show their names;
+  // pickers only offer the active ones.
+  const activityOrder = [{ sortOrder: "asc" as const }, { createdAt: "asc" as const }];
+  app.get("/api/activities", async (_req, reply) => {
+    reply.header("Cache-Control", "no-cache");
+    return prisma.activity.findMany({ orderBy: activityOrder, select: { slug: true, nameVi: true, nameEn: true, icon: true, active: true, sortOrder: true } });
+  });
 
   // ---------- talents ----------
   const publicTalent = (t: {
@@ -269,6 +276,9 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     if (!p.success) return reply.code(400).send({ error: "invalid", issues: p.error.issues });
     const schedule = normalizeSlots(p.data.schedule);
     if (!schedule) return reply.code(400).send({ error: "invalid_schedule" });
+    const current = await prisma.talentProfile.findUnique({ where: { userId: req.user.id }, select: { activities: true } });
+    if (invalidPicks(p.data.activities, await prisma.activity.findMany({ select: { slug: true, active: true } }), current?.activities).length)
+      return reply.code(400).send({ error: "invalid_activity" });
     const data = { ...p.data, schedule, heightCm: p.data.heightCm ?? null };
     const t = await prisma.talentProfile.upsert({
       where: { userId: req.user.id }, create: { userId: req.user.id, photos: [], ...data }, update: data,
@@ -284,9 +294,10 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
       lookingForNote: z.string().trim().max(200).default(""),
     }).safeParse(req.body);
     if (!p.success) return reply.code(400).send({ error: "invalid" });
-    const known = new Set((await prisma.activity.findMany({ select: { slug: true } })).map((a) => a.slug));
     const lookingFor = [...new Set(p.data.lookingFor)];
-    if (!lookingFor.every((a) => known.has(a))) return reply.code(400).send({ error: "invalid_activity" });
+    const had = (await prisma.user.findUniqueOrThrow({ where: { id: req.user.id }, select: { lookingFor: true } })).lookingFor;
+    if (invalidPicks(lookingFor, await prisma.activity.findMany({ select: { slug: true, active: true } }), had).length)
+      return reply.code(400).send({ error: "invalid_activity" });
     // Same masking as chat, so a note cannot be used to leak phone numbers or links.
     const u = await prisma.user.update({
       where: { id: req.user.id }, data: { lookingFor, lookingForNote: maskContacts(p.data.lookingForNote).text },
@@ -512,6 +523,8 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     if (!p.success) return reply.code(400).send({ error: "invalid", issues: p.error.issues });
     const d = p.data;
     if (isInPast(d)) return reply.code(400).send({ error: "date_in_past" });
+    if (invalidPicks([d.activity], await prisma.activity.findMany({ select: { slug: true, active: true } })).length)
+      return reply.code(400).send({ error: "invalid_activity" });
     const talent = await prisma.talentProfile.findUnique({ where: { userId: d.talentId }, include: { user: true } });
     // Talents who are not approved are hidden from the site, so they cannot be booked by guessing an id either.
     if (!talent || !talent.published || talent.user.status !== "ACTIVE" || !isPubliclyVisible(talent.user.kycStatus))
@@ -980,6 +993,69 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     if (!r) return reply.code(404).send({ error: "not_found" });
     await prisma.review.update({ where: { id }, data: { hidden: p.data.hidden } });
     await recalcRating(r.talentId);
+    return { ok: true };
+  });
+
+  // ---------- admin: activity groups ----------
+  const activityBody = z.object({
+    nameVi: z.string().trim().min(2).max(40),
+    nameEn: z.string().trim().min(2).max(40),
+    icon: z.enum(ACTIVITY_ICON_KEYS),
+  });
+  const usageOf = async (slug: string) => {
+    const [talents, customers, bookings] = await Promise.all([
+      prisma.talentProfile.count({ where: { activities: { has: slug } } }),
+      prisma.user.count({ where: { lookingFor: { has: slug } } }),
+      prisma.booking.count({ where: { activity: slug } }),
+    ]);
+    return { talents, customers, bookings };
+  };
+
+  app.get("/api/admin/activities", { preHandler: adminOnly }, async () => {
+    const rows = await prisma.activity.findMany({ orderBy: activityOrder });
+    return Promise.all(rows.map(async (a) => ({ ...a, usage: await usageOf(a.slug) })));
+  });
+
+  app.post("/api/admin/activities", { preHandler: adminOnly }, async (req, reply) => {
+    const p = activityBody.safeParse(req.body);
+    if (!p.success) return reply.code(400).send({ error: "invalid" });
+    const all = await prisma.activity.findMany();
+    const clash = nameConflict(all, p.data);
+    if (clash) return reply.code(409).send({ error: "name_taken", field: clash });
+    const slug = uniqueSlug(slugify(p.data.nameEn), all.map((a) => a.slug));
+    const created = await prisma.activity.create({ data: { slug, ...p.data, sortOrder: Math.max(0, ...all.map((a) => a.sortOrder)) + 10 } });
+    return created;
+  });
+
+  app.put("/api/admin/activities/:slug", { preHandler: adminOnly }, async (req, reply) => {
+    const { slug } = req.params as { slug: string };
+    const p = activityBody.extend({ active: z.boolean().optional() }).safeParse(req.body);
+    if (!p.success) return reply.code(400).send({ error: "invalid" });
+    const all = await prisma.activity.findMany();
+    if (!all.some((a) => a.slug === slug)) return reply.code(404).send({ error: "not_found" });
+    const clash = nameConflict(all, p.data, slug);
+    if (clash) return reply.code(409).send({ error: "name_taken", field: clash });
+    // The slug is never changed: profiles, preferences and bookings refer to it.
+    return prisma.activity.update({ where: { slug }, data: p.data });
+  });
+
+  app.post("/api/admin/activities/:slug/move", { preHandler: adminOnly }, async (req, reply) => {
+    const { slug } = req.params as { slug: string };
+    const p = z.object({ direction: z.enum(["up", "down"]) }).safeParse(req.body);
+    if (!p.success) return reply.code(400).send({ error: "invalid" });
+    const rows = await prisma.activity.findMany({ orderBy: activityOrder, select: { slug: true } });
+    const order = moveSlug(rows.map((r) => r.slug), slug, p.data.direction);
+    await prisma.$transaction(order.map((s, i) => prisma.activity.update({ where: { slug: s }, data: { sortOrder: (i + 1) * 10 } })));
+    return { ok: true };
+  });
+
+  app.delete("/api/admin/activities/:slug", { preHandler: adminOnly }, async (req, reply) => {
+    const { slug } = req.params as { slug: string };
+    if (!(await prisma.activity.findUnique({ where: { slug } }))) return reply.code(404).send({ error: "not_found" });
+    const usage = await usageOf(slug);
+    // In use: hide it instead, so existing profiles and past bookings keep their label.
+    if (!canDeleteActivity(usage)) return reply.code(409).send({ error: "in_use", usage });
+    await prisma.activity.delete({ where: { slug } });
     return { ok: true };
   });
 

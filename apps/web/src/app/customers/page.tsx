@@ -4,7 +4,7 @@ import { MapPin } from "lucide-react";
 import { api, type Activity, type CustomerCard } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { useRequireAuth } from "@/lib/useRequireAuth";
-import { activityIcon } from "@/components/activityIcons";
+import { iconByKey } from "@/components/activityIcons";
 
 export default function Customers() {
   const { t, locale } = useI18n();
@@ -26,8 +26,8 @@ export default function Customers() {
     <div className="space-y-5">
       <div><h1 className="section-title">{t("cust.title")}</h1><p className="text-sm text-muted">{t("cust.sub")}</p></div>
       <div className="flex flex-wrap gap-2">
-        {[{ slug: "", name: t("explore.all") }, ...acts.map((a) => ({ slug: a.slug, name: label(a.slug) }))].map((a) => {
-          const Icon = activityIcon(a.slug || "all");
+        {[{ slug: "", icon: "all", name: t("explore.all") }, ...acts.filter((a) => a.active).map((a) => ({ slug: a.slug, icon: a.icon, name: label(a.slug) }))].map((a) => {
+          const Icon = iconByKey(a.icon);
           return (
             <button key={a.slug || "all"} onClick={() => setActivity(a.slug)} aria-pressed={activity === a.slug}
               className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-semibold ${activity === a.slug ? "border-brand-500 bg-brand-500 text-white" : "border-line bg-white text-ink hover:border-brand-300"}`}>

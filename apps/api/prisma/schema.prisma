@@ -121,10 +121,16 @@ model TalentProfile {
   reviews Review[]
 }
 
+/// An activity group users can offer (talents) or look for (customers). Created and managed by admins.
+/// The slug never changes: profiles, preferences and bookings reference it.
 model Activity {
-  slug   String @id
-  nameVi String
-  nameEn String
+  slug      String   @id
+  nameVi    String
+  nameEn    String
+  icon      String   @default("sparkles")
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
 }
 
 model SavedTalent {

@@ -17,6 +17,13 @@ npm run dev:web    # :3000 (proxies /api and /socket.io to the API)
 npm test
 ```
 
+## Activity groups
+Admins manage the activity groups (Coffee, Study, Temple, ...) under Admin > Activity groups: create one with a
+Vietnamese and an English name and an icon, edit it, reorder it, hide it, or delete it. New groups are available at
+once to talents (profile), customers ("looking for"), the Explore filters and the booking form. A group that is in
+use cannot be deleted; hide it instead, and existing profiles keep showing it while nobody can add it afresh.
+Re-running the seed never overwrites admin edits.
+
 ## Profiles
 **Talents** list the activities they offer and a weekly availability grid (7 days x morning/afternoon/evening),
 plus an optional note. Explore can filter by the day a talent is free. **Customers** can say what they are looking

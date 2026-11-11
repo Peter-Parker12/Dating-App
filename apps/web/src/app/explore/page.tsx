@@ -5,7 +5,7 @@ import { api, type Activity, type Talent } from "@/lib/api";
 import { isApproved, useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import TalentCard from "@/components/TalentCard";
-import { activityIcon } from "@/components/activityIcons";
+import { iconByKey } from "@/components/activityIcons";
 import { DAYS } from "@/lib/schedule";
 import type { Key } from "@/lib/i18n";
 
@@ -58,8 +58,8 @@ export default function Explore() {
           <p className="text-sm text-muted">{t("explore.pickSub")}</p>
         </div>
         <div className="grid grid-cols-4 gap-2.5 sm:grid-cols-4 lg:grid-cols-8">
-          {[{ slug: "", label: t("explore.all") }, ...activities.map((a) => ({ slug: a.slug, label: locale === "vi" ? a.nameVi : a.nameEn }))].map((a) => {
-            const Icon = activityIcon(a.slug || "all");
+          {[{ slug: "", icon: "all", label: t("explore.all") }, ...activities.filter((a) => a.active).map((a) => ({ slug: a.slug, icon: a.icon, label: locale === "vi" ? a.nameVi : a.nameEn }))].map((a) => {
+            const Icon = iconByKey(a.icon);
             const on = activity === a.slug;
             return (
               <button key={a.slug || "all"} onClick={() => setActivity(a.slug)}

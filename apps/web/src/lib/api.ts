@@ -32,7 +32,8 @@ export interface Talent {
   style: string; languages: string[]; hourlyPrice: number; photos: string[]; activities: string[];
   availability: string; district: string; sticker: string; availableNow: boolean; ratingAvg: number; ratingCount: number; schedule: string[]; verified: boolean;
 }
-export interface Activity { slug: string; nameVi: string; nameEn: string }
+/** Hidden activities (active: false) stay in the list so existing profiles keep their label; pickers offer only active ones. */
+export interface Activity { slug: string; nameVi: string; nameEn: string; icon: string; active: boolean; sortOrder: number }
 export interface Booking {
   id: string; customerId: string; talentId: string; activity: string; date: string; startTime: string;
   hours: number; place: string; note: string; status: "PENDING" | "ACCEPTED" | "DECLINED" | "CANCELLED" | "COMPLETED";

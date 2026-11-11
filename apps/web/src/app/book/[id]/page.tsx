@@ -47,7 +47,7 @@ export default function Book({ params }: { params: Promise<{ id: string }> }) {
         <form onSubmit={next} className="card space-y-3">
           <div><label className="label">{t("book.activity")}</label>
             <select className="input" value={f.activity} onChange={(e) => setF({ ...f, activity: e.target.value })}>
-              {acts.map((a) => <option key={a.slug} value={a.slug}>{locale === "vi" ? a.nameVi : a.nameEn}</option>)}
+              {acts.filter((a) => a.active).map((a) => <option key={a.slug} value={a.slug}>{locale === "vi" ? a.nameVi : a.nameEn}</option>)}
             </select></div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">{t("book.date")}</label><input required type="date" className="input" min={new Date().toISOString().slice(0, 10)} value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></div>

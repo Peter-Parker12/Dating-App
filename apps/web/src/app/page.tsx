@@ -24,7 +24,7 @@ export default function Home() {
     [MapPin, "home.r4", "home.r4d", false], [Bell, "home.r3", "home.r3d", true],
   ] as const;
   const stats: [string, Key][] = [
-    [String(talents.length || "-"), "home.stat1"], [String(activities.length || "-"), "home.stat2"], ["1-tap", "home.stat3"],
+    [String(talents.length || "-"), "home.stat1"], [String(activities.filter((a) => a.active).length || "-"), "home.stat2"], ["1-tap", "home.stat3"],
   ];
   const posters = talents.filter((x) => x.photos[0]).slice(0, 3);
 

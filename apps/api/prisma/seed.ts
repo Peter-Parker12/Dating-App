@@ -8,14 +8,14 @@ const prisma = new PrismaClient();
 // deployment never exposes accounts with a known password.
 const demoHash = () => argon2.hash(process.env.DEMO_PASSWORD ?? randomUUID());
 
-const activities = [
-  ["cafe", "Cà phê", "Coffee"],
-  ["study", "Học cùng", "Study together"],
-  ["temple", "Đi chùa", "Temple visit"],
-  ["party", "Dự tiệc", "Party"],
-  ["family", "Ra mắt gia đình", "Meet the family"],
-  ["gym", "Tập gym", "Gym"],
-  ["online-chat", "Tâm sự online", "Online chat"],
+const activities: [string, string, string, string][] = [
+  ["cafe", "Cà phê", "Coffee", "coffee"],
+  ["study", "Học cùng", "Study together", "book-open"],
+  ["temple", "Đi chùa", "Temple visit", "landmark"],
+  ["party", "Dự tiệc", "Party", "party-popper"],
+  ["family", "Ra mắt gia đình", "Meet the family", "users"],
+  ["gym", "Tập gym", "Gym", "dumbbell"],
+  ["online-chat", "Tâm sự online", "Online chat", "message-circle"],
 ];
 
 interface Demo {
@@ -148,8 +148,9 @@ async function seedReviews(talentUserIds: string[]) {
 }
 
 async function main() {
-  for (const [slug, nameVi, nameEn] of activities)
-    await prisma.activity.upsert({ where: { slug }, create: { slug, nameVi, nameEn }, update: { nameVi, nameEn } });
+  // Admins manage activities in the UI, so re-seeding must not overwrite their edits: only create missing ones.
+  for (const [i, [slug, nameVi, nameEn, icon]] of activities.entries())
+    await prisma.activity.upsert({ where: { slug }, create: { slug, nameVi, nameEn, icon, sortOrder: (i + 1) * 10 }, update: {} });
 
   const adminPw = process.env.ADMIN_PASSWORD ?? "change-me-admin";
   const admin = process.env.ADMIN_EMAIL ?? "admin@cungdi.local";
