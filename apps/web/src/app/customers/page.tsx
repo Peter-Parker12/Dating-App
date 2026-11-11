@@ -41,7 +41,10 @@ export default function Customers() {
           {items.map((c) => (
             <div key={c.id} className="card space-y-2.5">
               <div className="flex items-center gap-3">
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-100 text-lg font-black text-brand-600">{c.firstName.charAt(0)}</span>
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand-100 text-lg font-black text-brand-600">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  {c.photoUrl ? <img src={c.photoUrl} alt="" loading="lazy" className="h-full w-full object-cover" /> : c.firstName.charAt(0)}
+                </span>
                 <div className="min-w-0">
                   <div className="truncate font-extrabold text-ink">{c.firstName}</div>
                   {c.province && <div className="flex items-center gap-1 text-xs text-muted"><MapPin size={12} className="text-brand-400" />{c.province}</div>}

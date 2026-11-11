@@ -5,7 +5,7 @@ export type NotificationType =
   | "KYC_SUBMITTED" | "KYC_APPROVED" | "KYC_REJECTED" | "KYC_NEW_SUBMISSION"
   | "ACCOUNT_SUSPENDED" | "ACCOUNT_REACTIVATED" | "ROLE_MODERATOR" | "ROLE_MEMBER"
   | "BOOKING_REQUESTED" | "BOOKING_ACCEPTED" | "BOOKING_DECLINED" | "BOOKING_CANCELLED" | "BOOKING_COMPLETED"
-  | "REVIEW_RECEIVED" | "REVIEW_REPLIED";
+  | "REVIEW_RECEIVED" | "REVIEW_REPLIED" | "PHOTO_REMOVED";
 
 export interface Mail { subject: string; text: string }
 
@@ -174,6 +174,17 @@ export function notificationEmail(locale: Locale, type: NotificationType, name: 
     REVIEW_RECEIVED: vi
       ? { subject: "Quý khách có đánh giá mới", body: [`${clean(data.name ?? "Một khách hàng")} vừa gửi đánh giá ${data.rating ?? ""} sao cho Quý khách. Quý khách có thể xem và phản hồi trong mục Talent.`] }
       : { subject: "You have a new review", body: [`${clean(data.name ?? "A customer")} has left you a ${data.rating ?? ""}-star review. You can read it and reply in the Talent section.`] },
+    PHOTO_REMOVED: vi
+      ? { subject: "Một ảnh của Quý khách đã bị gỡ", body: [
+          "Một ảnh trong hồ sơ của Quý khách đã được đội ngũ quản trị gỡ khỏi nền tảng vì chưa phù hợp với Quy tắc ứng xử.",
+          `Lý do: ${data.reason ?? "Không có"}`,
+          "Quý khách có thể tải lên một ảnh khác phù hợp. Nếu cho rằng đây là sự nhầm lẫn, xin vui lòng liên hệ với chúng tôi để được xem xét lại.",
+        ] }
+      : { subject: "A photo was removed from your profile", body: [
+          "A photo on your profile has been removed from the platform by our team because it did not comply with the code of conduct.",
+          `Reason: ${data.reason ?? "None given"}`,
+          "You are welcome to upload another suitable photo. If you believe this was a mistake, please contact us so that we can review the matter.",
+        ] },
     REVIEW_REPLIED: vi
       ? { subject: "Có phản hồi cho đánh giá của Quý khách", body: [`${clean(data.name ?? "Bạn đồng hành")} đã phản hồi đánh giá của Quý khách.`] }
       : { subject: "A reply to your review", body: [`${clean(data.name ?? "The companion")} has replied to your review.`] },

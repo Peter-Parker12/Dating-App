@@ -6,6 +6,7 @@ import type { Key } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n";
 import { useRequireAuth } from "@/lib/useRequireAuth";
 import EmailSettings from "@/components/admin/EmailSettings";
+import PhotoModeration from "@/components/admin/PhotoModeration";
 
 interface Pending {
   id: string; name: string; email: string; phone: string | null; gender: string | null; role: string;
@@ -133,7 +134,9 @@ export default function Admin() {
         ))}
       </section>
 
-{isAdmin && <EmailSettings />}
+<PhotoModeration />
+
+      {isAdmin && <EmailSettings />}
 
       {isAdmin && (
       <section className="space-y-3">

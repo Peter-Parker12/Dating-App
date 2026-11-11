@@ -41,7 +41,13 @@ export default function Bookings() {
         return (
           <div key={b.id} className="card space-y-2">
             <div className="flex items-center justify-between">
-              <div className="font-bold">{other}</div>
+              <div className="flex items-center gap-2.5 font-bold">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand-100 text-sm font-black text-brand-600">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  {(mine === "customer" ? b.talent.photoUrl : b.customer.photoUrl) ? <img src={(mine === "customer" ? b.talent.photoUrl : b.customer.photoUrl)!} alt="" loading="lazy" className="h-full w-full object-cover" /> : other.charAt(0)}
+                </span>
+                {other}
+              </div>
               <span className="rounded-full bg-brand-100 px-2 py-0.5 text-xs font-bold text-brand-700">{t(`status.${b.status}`)}</span>
             </div>
             <div className="text-sm text-muted">{actLabel(b.activity)} · {formatDay(b.date, locale)} {b.startTime} · {b.hours} {t("common.hours")} · {b.place}</div>

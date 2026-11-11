@@ -24,6 +24,14 @@ for (activities and a short note); approved talents see these in the "Looking fo
 province, activities and note (never full name, phone, email or address). Customers who leave it empty are not listed.
 Prices per service or session are intentionally not included yet.
 
+## Photos
+Every user can have one **profile photo** and a **gallery** of up to 6 photos (Profile page; talents also on their
+dashboard). They are separate from the private verification documents. Photos are shrunk in the browser and uploaded
+in parallel. Talents' photos are public (the listing is public); customers' photos are visible only to logged-in,
+approved members, never to anonymous visitors. Photos go live immediately for approved accounts. Anyone can report a
+photo; admins and moderators review reported (or recent) photos under Admin > Photo moderation and can remove one with a
+reason, which notifies the owner by email and in-app. Removed photos disappear for everyone except the owner and staff.
+
 ## Bookings
 A customer sends a request (activity, date, start time, hours, public place) to an approved talent, who accepts or
 declines. Chat opens once a booking is accepted. Rules enforced by the API: only approved, active talents can be

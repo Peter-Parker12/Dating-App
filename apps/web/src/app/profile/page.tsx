@@ -4,6 +4,7 @@ import { useI18n, type Key } from "@/lib/i18n";
 import { useRequireAuth } from "@/lib/useRequireAuth";
 import { isApproved } from "@/lib/auth";
 import LookingFor from "@/components/LookingFor";
+import PhotoManager from "@/components/PhotoManager";
 
 const STATUS_KEY: Record<string, Key> = {
   PENDING: "kyc.banner.PENDING", IN_REVIEW: "verify.inReview", APPROVED: "verify.approved", REJECTED: "verify.rejected",
@@ -24,6 +25,7 @@ export default function Profile() {
         {me.addressLine && <div><span className="text-muted">{t("profile.address")}:</span> {[me.addressLine, me.ward, me.province].filter(Boolean).join(", ")}</div>}
         <div className="pt-1 text-xs text-muted">{t("profile.private")}</div>
       </div>
+      {isApproved(me) && me.role !== "ADMIN" && me.role !== "MODERATOR" && <PhotoManager isTalent={me.role === "TALENT"} />}
       {me.role === "CUSTOMER" && isApproved(me) && <LookingFor me={me} />}
       {me.role !== "ADMIN" && me.role !== "MODERATOR" && (
         <div className="card space-y-2">

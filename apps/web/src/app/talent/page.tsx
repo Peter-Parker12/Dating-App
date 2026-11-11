@@ -6,6 +6,7 @@ import { useI18n } from "@/lib/i18n";
 import { useRequireAuth } from "@/lib/useRequireAuth";
 import ReviewList from "@/components/ReviewList";
 import ScheduleGrid from "@/components/ScheduleGrid";
+import PhotoManager from "@/components/PhotoManager";
 
 export default function TalentDashboard() {
   const { t, locale } = useI18n();
@@ -44,6 +45,7 @@ export default function TalentDashboard() {
 
   return (
     <div className="mx-auto max-w-lg space-y-6">
+    <PhotoManager isTalent />
     <form onSubmit={(e) => void save(e)} className="card space-y-3">
       <h1 className="text-2xl font-bold">{t("talentdash.title")}</h1>
       <div><label className="label">{t("talentdash.name")}</label><input required className="input" value={f.displayName} onChange={(e) => setF({ ...f, displayName: e.target.value })} /></div>

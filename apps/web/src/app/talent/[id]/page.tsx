@@ -5,6 +5,7 @@ import { api, vnd, type Activity, type Talent } from "@/lib/api";
 import { isApproved, useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import Avatar from "@/components/Avatar";
+import { Flag } from "lucide-react";
 import ReviewList from "@/components/ReviewList";
 import ScheduleGrid from "@/components/ScheduleGrid";
 import { Stars } from "@/components/Stars";
@@ -16,6 +17,8 @@ export default function TalentPage({ params }: { params: Promise<{ id: string }>
   const [talent, setTalent] = useState<Talent | null | undefined>(undefined);
   const [acts, setActs] = useState<Activity[]>([]);
   const [saved, setSaved] = useState(false);
+  const [active, setActive] = useState(0);
+  const [reportMsg, setReportMsg] = useState("");
 
   useEffect(() => {
     void api<Talent>(`/talents/${id}`).then(setTalent).catch(() => setTalent(null));
@@ -25,6 +28,12 @@ export default function TalentPage({ params }: { params: Promise<{ id: string }>
     if (me?.role !== "CUSTOMER" || !isApproved(me)) return;
     void api<Talent[]>("/saved").then((s) => setSaved(s.some((x) => x.id === id))).catch(() => {});
   }, [me, id]);
+
+  const reportPhoto = async (src: string) => {
+    const reason = window.prompt(t("photos.reportAsk")) ;
+    if (reason === null) return;
+    try { await api(`${src.replace("/api", "")}/report`, { method: "POST", json: { reason } }); setReportMsg(t("photos.reported")); } catch {}
+  };
 
   if (talent === undefined) return <p>{t("common.loading")}</p>;
   if (talent === null) return <p>404</p>;
@@ -41,12 +50,26 @@ export default function TalentPage({ params }: { params: Promise<{ id: string }>
     <div className="space-y-6">
     <div className="card !p-4 md:!p-6 grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
       <div className="space-y-2">
-        <Avatar talent={talent} className="aspect-[4/4.3] w-full !rounded-[20px] text-7xl" />
+        <div className="relative">
+          {talent.photos.length ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={talent.photos[active] ?? talent.photos[0]} alt={talent.displayName} className="aspect-[4/4.3] w-full rounded-[20px] object-cover" />
+          ) : <Avatar talent={talent} className="aspect-[4/4.3] w-full !rounded-[20px] text-7xl" />}
+          {isApproved(me) && me?.id !== talent.id && (talent.photos[active] ?? "").startsWith("/api/photos/") && (
+            <button type="button" onClick={() => void reportPhoto(talent.photos[active])} className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-bold text-muted shadow hover:text-red-600">
+              <Flag size={12} /> {t("photos.report")}
+            </button>
+          )}
+        </div>
+        {reportMsg && <p className="text-xs text-emerald-600" role="status">{reportMsg}</p>}
         {talent.photos.length > 1 && (
-          <div className="grid grid-cols-4 gap-2">
-            {talent.photos.slice(1).map((src) => (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img key={src} src={src} alt={talent.displayName} loading="lazy" decoding="async" className="aspect-square w-full rounded-xl object-cover" />
+          <div className="grid grid-cols-5 gap-2">
+            {talent.photos.map((src, i) => (
+              <button key={src} type="button" onClick={() => setActive(i)} aria-label={`${talent.displayName} ${i + 1}`} aria-current={i === active}
+                className={`overflow-hidden rounded-xl border-2 ${i === active ? "border-brand-500" : "border-transparent"}`}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={src} alt="" loading="lazy" decoding="async" className="aspect-square w-full object-cover" />
+              </button>
             ))}
           </div>
         )}

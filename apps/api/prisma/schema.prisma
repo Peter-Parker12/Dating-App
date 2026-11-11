@@ -26,6 +26,11 @@ enum KycStatus {
   REJECTED
 }
 
+enum PhotoKind {
+  PROFILE
+  GALLERY
+}
+
 enum OtpChannel {
   EMAIL
   PHONE
@@ -81,6 +86,8 @@ model User {
   reviewReports  ReviewReport[]
   otps           OtpCode[]
   notifications  Notification[]
+  photos         Photo[]
+  photoReports   PhotoReport[]
   asTalent    Booking[]      @relation("talent")
   messages    Message[]
   sosAlerts   SosAlert[]
@@ -248,4 +255,31 @@ model Setting {
   value     Json
   updatedAt DateTime @updatedAt
   updatedBy String?
+}
+
+/// Public profile photo (one per user) and gallery photos (up to 6). Separate from the private KYC documents.
+model Photo {
+  id           String        @id @default(cuid())
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind         PhotoKind
+  key          String
+  hidden       Boolean       @default(false)
+  hiddenReason String?
+  hiddenBy     String?
+  createdAt    DateTime      @default(now())
+  reports      PhotoReport[]
+
+  @@index([userId, kind])
+}
+
+model PhotoReport {
+  photoId   String
+  userId    String
+  photo     Photo    @relation(fields: [photoId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id])
+  reason    String   @default("")
+  createdAt DateTime @default(now())
+
+  @@id([photoId, userId])
 }

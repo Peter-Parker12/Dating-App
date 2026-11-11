@@ -37,8 +37,8 @@ export interface Booking {
   id: string; customerId: string; talentId: string; activity: string; date: string; startTime: string;
   hours: number; place: string; note: string; status: "PENDING" | "ACCEPTED" | "DECLINED" | "CANCELLED" | "COMPLETED";
   review: { id: string; rating: number; comment: string; createdAt: string } | null;
-  customer: { id: string; name: string };
-  talent: { id: string; name: string; talent: { displayName: string } | null };
+  customer: { id: string; name: string; photoUrl: string | null };
+  talent: { id: string; name: string; photoUrl: string | null; talent: { displayName: string } | null };
 }
 export interface Message { id: string; bookingId: string; senderId: string; body: string; flagged: boolean; createdAt: string }
 export interface ReviewItem {
@@ -46,4 +46,4 @@ export interface ReviewItem {
 }
 export interface ReviewSummary { avg: number; count: number; breakdown: number[]; reviews: ReviewItem[] }
 export interface Notice { id: string; type: string; data: Record<string, string> | null; readAt: string | null; createdAt: string }
-export interface CustomerCard { id: string; firstName: string; province: string | null; lookingFor: string[]; note: string; since: string }
+export interface CustomerCard { id: string; firstName: string; province: string | null; lookingFor: string[]; note: string; since: string; photoUrl: string | null }

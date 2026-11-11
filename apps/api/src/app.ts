@@ -22,6 +22,7 @@ import { demoteBlocker, promoteBlocker, roleAfterDemotion } from "./staffRules.j
 import { invalidateEmailConfig, readStoredEmail, resolveEmailConfig, type StoredEmail } from "./emailConfig.js";
 import { encryptSecret } from "./secrets.js";
 import { DAYS, normalizeSlots, slotsForDay } from "./schedule.js";
+import { canAddGallery, GALLERY_MAX, orderPhotos, photoAccess, type PhotoViewer } from "./photoRules.js";
 import { checkOtpState, generateOtp, hashOtp, otpMatches, OTP_MAX_ATTEMPTS, OTP_MAX_PER_HOUR, OTP_TTL_MS, resendWaitMs } from "./otp.js";
 import { createNotifier, sendEmail, sendEmailStrict, sendSms } from "./notify.js";
 import { otpEmail, otpSms, testEmail } from "./mailTemplates.js";
@@ -194,11 +195,15 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
   const publicTalent = (t: {
     userId: string; displayName: string; gender: string; age: number; bio: string; heightCm: number | null;
     style: string; languages: string[]; hourlyPrice: number; photos: string[]; activities: string[];
-    availability: string; district: string; sticker: string; availableNow: boolean; ratingAvg: number; ratingCount: number; schedule: string[]; user?: { kycStatus: string; profileImageKey: string | null };
+    availability: string; district: string; sticker: string; availableNow: boolean; ratingAvg: number; ratingCount: number; schedule: string[]; user?: { kycStatus: string; profileImageKey: string | null; photos?: { id: string; kind: "PROFILE" | "GALLERY"; createdAt: Date }[] };
   }) => ({
     id: t.userId, displayName: t.displayName, gender: t.gender, age: t.age, bio: t.bio, heightCm: t.heightCm,
     style: t.style, languages: t.languages, hourlyPrice: t.hourlyPrice,
-    photos: t.photos.length ? t.photos : t.user?.profileImageKey ? [`/api/users/${t.userId}/avatar`] : [],
+    // Uploaded profile + gallery photos win; seeded demo photos and the verified profile image are fallbacks.
+    photos: (() => {
+      const uploaded = orderPhotos(t.user?.photos ?? []).map((p) => `/api/photos/${p.id}`);
+      return uploaded.length ? uploaded : t.photos.length ? t.photos : t.user?.profileImageKey ? [`/api/users/${t.userId}/avatar`] : [];
+    })(),
     activities: t.activities, availability: t.availability, district: t.district,
     sticker: t.sticker, availableNow: t.availableNow, ratingAvg: t.ratingAvg, ratingCount: t.ratingCount, schedule: t.schedule, verified: t.user?.kycStatus === "APPROVED",
   });
@@ -228,7 +233,7 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
         ...(day ? { schedule: { hasSome: slotsForDay(day) } } : {}),
         hourlyPrice: { gte: minPrice ?? 0, ...(maxPrice !== undefined ? { lte: maxPrice } : {}) },
       },
-      include: { user: { select: { kycStatus: true, profileImageKey: true } } },
+      include: { user: { select: { kycStatus: true, profileImageKey: true, photos: { where: { hidden: false }, select: { id: true, kind: true, createdAt: true } } } } },
       orderBy: sort === "rating" ? [{ ratingAvg: "desc" }, { ratingCount: "desc" }, { displayName: "asc" }] : { displayName: "asc" },
     });
     return rows.map(publicTalent);
@@ -236,7 +241,7 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
 
   app.get("/api/talents/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
-    const t = await prisma.talentProfile.findUnique({ where: { userId: id }, include: { user: { select: { kycStatus: true, status: true, profileImageKey: true } } } });
+    const t = await prisma.talentProfile.findUnique({ where: { userId: id }, include: { user: { select: { kycStatus: true, status: true, profileImageKey: true, photos: { where: { hidden: false }, select: { id: true, kind: true, createdAt: true } } } } } });
     if (!t || !t.published || t.user.status !== "ACTIVE" || !isPubliclyVisible(t.user.kycStatus)) return reply.code(404).send({ error: "not_found" });
     return publicTalent(t);
   });
@@ -302,20 +307,156 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
         role: "CUSTOMER", status: "ACTIVE", kycStatus: "APPROVED",
         lookingFor: q.data.activity ? { has: q.data.activity } : { isEmpty: false },
       },
-      select: { id: true, name: true, province: true, lookingFor: true, lookingForNote: true, createdAt: true },
+      select: { id: true, name: true, province: true, lookingFor: true, lookingForNote: true, createdAt: true, ...profilePhoto },
       orderBy: { createdAt: "desc" }, take: 100,
     });
     return rows.map((r) => ({
       id: r.id, firstName: r.name.trim().split(/\s+/).pop() ?? "", province: r.province,
-      lookingFor: r.lookingFor, note: r.lookingForNote, since: r.createdAt,
+      lookingFor: r.lookingFor, note: r.lookingForNote, since: r.createdAt, photoUrl: photoUrl(r),
     }));
+  });
+
+  // ---------- photos: profile photo + gallery ----------
+  const photoFile = (key: string) => path.join(UPLOAD_DIR, key);
+
+  /** The caller, if they sent a valid session; photos can be requested by anonymous visitors too. */
+  async function optionalViewer(req: FastifyRequest): Promise<PhotoViewer | null> {
+    try { await req.jwtVerify(); } catch { return null; }
+    const u = await prisma.user.findUnique({ where: { id: req.user.id }, select: { id: true, role: true, kycStatus: true, status: true } });
+    return u && u.status === "ACTIVE" ? { id: u.id, role: u.role, kyc: u.kycStatus } : null;
+  }
+
+  /** Reads a single uploaded image from the request and checks it is a real image. */
+  async function readImage(req: FastifyRequest, reply: FastifyReply): Promise<{ buf: Buffer; ext: string } | null> {
+    let buf: Buffer;
+    try {
+      const part = await req.file();
+      if (!part) { reply.code(400).send({ error: "no_file" }); return null; }
+      buf = await part.toBuffer();
+    } catch (e) {
+      if ((e as { code?: string }).code === "FST_REQ_FILE_TOO_LARGE") { reply.code(413).send({ error: "file_too_large" }); return null; }
+      throw e;
+    }
+    const ext = sniffImage(buf);
+    if (!ext) { reply.code(400).send({ error: "bad_file_type" }); return null; }
+    return { buf, ext };
+  }
+
+  app.get("/api/me/photos", { preHandler: auth }, async (req) => {
+    const rows = orderPhotos(await prisma.photo.findMany({ where: { userId: req.user.id }, select: { id: true, kind: true, hidden: true, hiddenReason: true, createdAt: true } }));
+    return {
+      max: GALLERY_MAX,
+      profile: rows.find((p) => p.kind === "PROFILE") ?? null,
+      gallery: rows.filter((p) => p.kind === "GALLERY"),
+    };
+  });
+
+  app.post("/api/me/photos/profile", { preHandler: approved, config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (req, reply) => {
+    const img = await readImage(req, reply);
+    if (!img) return reply;
+    const key = `${randomUUID()}.${img.ext}`;
+    await writeFile(photoFile(key), img.buf);
+    const old = await prisma.photo.findMany({ where: { userId: req.user.id, kind: "PROFILE" } });
+    const created = await prisma.photo.create({ data: { userId: req.user.id, kind: "PROFILE", key } });
+    // One profile photo per user: the previous one (row and file) is replaced.
+    await prisma.photo.deleteMany({ where: { id: { in: old.map((o) => o.id) } } });
+    await Promise.all(old.map((o) => removeFile(o.key)));
+    return { id: created.id, kind: "PROFILE" };
+  });
+
+  app.post("/api/me/photos/gallery", { preHandler: approved, config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (req, reply) => {
+    const img = await readImage(req, reply);
+    if (!img) return reply;
+    const key = `${randomUUID()}.${img.ext}`;
+    await writeFile(photoFile(key), img.buf);
+    // Uploads for one user are counted one at a time (advisory lock), so several parallel uploads can
+    // neither exceed the limit nor wrongly reject each other.
+    const created = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`gallery:${req.user.id}`}))`;
+      if (!canAddGallery(await tx.photo.count({ where: { userId: req.user.id, kind: "GALLERY" } }))) return null;
+      return tx.photo.create({ data: { userId: req.user.id, kind: "GALLERY", key } });
+    });
+    if (!created) { await removeFile(key); return reply.code(409).send({ error: "gallery_full", max: GALLERY_MAX }); }
+    return { id: created.id, kind: "GALLERY" };
+  });
+
+  app.delete("/api/me/photos/:id", { preHandler: auth }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const photo = await prisma.photo.findUnique({ where: { id } });
+    if (!photo || photo.userId !== req.user.id) return reply.code(404).send({ error: "not_found" });
+    await prisma.photo.delete({ where: { id } });
+    await removeFile(photo.key);
+    return { ok: true };
+  });
+
+  app.get("/api/photos/:id", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const photo = await prisma.photo.findUnique({ where: { id }, include: { user: { select: { id: true, role: true, status: true, kycStatus: true } } } });
+    if (!photo || !existsSync(photoFile(photo.key))) return reply.code(404).send({ error: "not_found" });
+    const viewer = await optionalViewer(req);
+    const access = photoAccess(viewer, { hidden: photo.hidden, owner: { id: photo.user.id, role: photo.user.role, status: photo.user.status, kyc: photo.user.kycStatus } });
+    if (access === "login_required") return reply.code(401).send({ error: "unauthorized" });
+    if (access === "hidden") return reply.code(404).send({ error: "not_found" });
+    // Talent photos are public, but only cached briefly so a removed photo disappears quickly.
+    const isPublic = photo.user.role === "TALENT" && !photo.hidden && photo.user.kycStatus === "APPROVED";
+    reply.header("Cache-Control", isPublic ? "public, max-age=300" : "private, no-store");
+    const ext = path.extname(photo.key);
+    reply.type(ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg");
+    return reply.send(createReadStream(photoFile(photo.key)));
+  });
+
+  app.post("/api/photos/:id/report", { preHandler: approved, config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const p = z.object({ reason: z.string().trim().max(200).default("") }).safeParse(req.body ?? {});
+    if (!p.success) return reply.code(400).send({ error: "invalid" });
+    const photo = await prisma.photo.findUnique({ where: { id }, include: { user: { select: { id: true, role: true, status: true, kycStatus: true } } } });
+    const viewer = await optionalViewer(req);
+    if (!photo || photo.userId === req.user.id || photoAccess(viewer, { hidden: photo.hidden, owner: { id: photo.user.id, role: photo.user.role, status: photo.user.status, kyc: photo.user.kycStatus } }) !== "allow")
+      return reply.code(404).send({ error: "not_found" });
+    await prisma.photoReport.upsert({
+      where: { photoId_userId: { photoId: id, userId: req.user.id } },
+      create: { photoId: id, userId: req.user.id, reason: p.data.reason }, update: { reason: p.data.reason },
+    });
+    return { ok: true };
+  });
+
+  // Staff: review reported photos, or the latest uploads, and remove the ones that break the rules.
+  app.get("/api/admin/photos", { preHandler: staffOnly }, async (req, reply) => {
+    const q = z.object({ view: z.enum(["reported", "recent"]).default("reported") }).safeParse(req.query);
+    if (!q.success) return reply.code(400).send({ error: "invalid" });
+    const rows = await prisma.photo.findMany({
+      where: q.data.view === "reported" ? { OR: [{ reports: { some: {} } }, { hidden: true }] } : {},
+      include: { user: { select: { id: true, name: true, role: true } }, reports: { select: { reason: true } } },
+      orderBy: { createdAt: "desc" }, take: 60,
+    });
+    return rows.map((r) => ({
+      id: r.id, kind: r.kind, hidden: r.hidden, hiddenReason: r.hiddenReason, createdAt: r.createdAt,
+      owner: r.user, reports: r.reports.length, reasons: r.reports.map((x) => x.reason).filter(Boolean),
+    }));
+  });
+
+  app.post("/api/admin/photos/:id/hidden", { preHandler: staffOnly }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const p = z.discriminatedUnion("hidden", [
+      z.object({ hidden: z.literal(true), reason: z.string().trim().min(3).max(200) }),
+      z.object({ hidden: z.literal(false) }),
+    ]).safeParse(req.body);
+    if (!p.success) return reply.code(400).send({ error: "invalid" });
+    const photo = await prisma.photo.findUnique({ where: { id } });
+    if (!photo) return reply.code(404).send({ error: "not_found" });
+    await prisma.photo.update({
+      where: { id },
+      data: p.data.hidden ? { hidden: true, hiddenReason: p.data.reason, hiddenBy: req.user.id } : { hidden: false, hiddenReason: null, hiddenBy: null },
+    });
+    if (p.data.hidden && !photo.hidden) await notifyUser(photo.userId, "PHOTO_REMOVED", { reason: p.data.reason });
+    return { ok: true };
   });
 
   // ---------- saved ----------
   app.get("/api/saved", { preHandler: approved }, async (req) => {
     const rows = await prisma.savedTalent.findMany({
       where: { userId: req.user.id },
-      include: { talent: { include: { user: { select: { kycStatus: true, profileImageKey: true } } } } },
+      include: { talent: { include: { user: { select: { kycStatus: true, profileImageKey: true, photos: { where: { hidden: false }, select: { id: true, kind: true, createdAt: true } } } } } } },
     });
     return rows.map((r) => publicTalent(r.talent));
   });
@@ -389,18 +530,25 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     return booking;
   });
 
+  const profilePhoto = { photos: { where: { kind: "PROFILE" as const, hidden: false }, select: { id: true } } };
   const bookingInclude = {
     review: { select: { id: true, rating: true, comment: true, createdAt: true } },
-    customer: { select: { id: true, name: true } },
-    talent: { select: { id: true, name: true, talent: { select: { displayName: true, photos: true } } } },
+    customer: { select: { id: true, name: true, ...profilePhoto } },
+    talent: { select: { id: true, name: true, ...profilePhoto, talent: { select: { displayName: true, photos: true } } } },
   } as const;
+  const photoUrl = (u: { photos: { id: string }[] }, fallback?: string) => (u.photos[0] ? `/api/photos/${u.photos[0].id}` : fallback ?? null);
 
   app.get("/api/bookings", { preHandler: approved }, async (req) => {
-    return prisma.booking.findMany({
+    const rows = await prisma.booking.findMany({
       where: { OR: [{ customerId: req.user.id }, { talentId: req.user.id }] },
       include: bookingInclude,
       orderBy: { createdAt: "desc" },
     });
+    return rows.map((b) => ({
+      ...b,
+      customer: { id: b.customer.id, name: b.customer.name, photoUrl: photoUrl(b.customer) },
+      talent: { id: b.talent.id, name: b.talent.name, talent: b.talent.talent && { displayName: b.talent.talent.displayName }, photoUrl: photoUrl(b.talent, b.talent.talent?.photos[0]) },
+    }));
   });
 
   app.post("/api/bookings/:id/status", { preHandler: approved }, async (req, reply) => {
