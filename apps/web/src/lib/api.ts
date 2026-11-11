@@ -25,13 +25,6 @@ function failure(status: number, data: unknown): ApiError {
   return new ApiError(status, code, (data as { detail?: string }).detail);
 }
 
-export async function apiForm<T = unknown>(path: string, body: FormData): Promise<T> {
-  const res = await fetch(`/api${path}`, { method: "POST", body, credentials: "same-origin" });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw failure(res.status, data);
-  return data as T;
-}
-
 export const vnd = (n: number) => `${n.toLocaleString("vi-VN")}đ`;
 
 export interface Talent {

@@ -27,7 +27,11 @@ Prices per service or session are intentionally not included yet.
 ## Account verification (KYC)
 New accounts are `PENDING`: they can view profiles, and nothing else, until an admin approves them.
 To apply, a user verifies their email or their phone (either one is enough; 6-digit codes), then uploads an ID photo,
-student card and profile image. Admins review the submission under **Admin > KYC** and approve or reject (with a reason);
+student card and profile image. Each photo is shrunk in the browser (1600 px, JPEG) and uploaded on its own, in the
+background and in parallel, as soon as it is chosen; the user can press submit at any time and keep browsing while the
+remaining uploads finish (the request is sent automatically when the last one completes, so the tab must stay open).
+Submitting only flips the status, and notification emails are sent in the background so a slow mail server never
+holds up a request. Admins review the submission under **Admin > KYC** and approve or reject (with a reason);
 rejected users can resubmit. Users get an in-app notification and an email on every status change. Admins are
 exempt, and the SOS button works for everyone.
 

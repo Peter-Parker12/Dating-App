@@ -19,11 +19,14 @@ function transporterFor(cfg: EmailConfig) {
   const key = JSON.stringify([cfg.host, cfg.port, cfg.secure, cfg.user, cfg.pass]);
   let t = transporters.get(key);
   if (!t) {
+    for (const old of transporters.values()) old.close();
     transporters.clear();
     t = nodemailer.createTransport({
       host: cfg.host, port: cfg.port, secure: cfg.secure,
       auth: cfg.user ? { user: cfg.user, pass: cfg.pass } : undefined,
-      connectionTimeout: 10_000, greetingTimeout: 10_000, socketTimeout: 15_000,
+      // Reuse connections: opening a TLS connection to the mail server dominates the time of each send.
+      pool: true, maxConnections: 2, maxMessages: 100,
+      connectionTimeout: 8_000, greetingTimeout: 8_000, socketTimeout: 15_000,
     });
     transporters.set(key, t);
   }
@@ -85,11 +88,8 @@ export function createNotifier(getIO: () => IOServer | null) {
     if (opts.email !== false) {
       const locale: Locale = user.locale === "en" ? "en" : "vi";
       const m = notificationEmail(locale, type, user.name, data);
-      try {
-        await sendEmail(user.email, m.subject, m.text);
-      } catch (e) {
-        console.error("notification email failed", (e as Error).message);
-      }
+      // Fire and forget: the caller (often an HTTP request) must never wait on the mail server.
+      void sendEmail(user.email, m.subject, m.text).catch((e: Error) => console.error("notification email failed", e.message));
     }
   };
 }

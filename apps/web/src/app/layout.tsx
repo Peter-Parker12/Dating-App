@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import "./globals.css";
 import { I18nProvider } from "@/lib/i18n";
 import { AuthProvider } from "@/lib/auth";
+import { UploadProvider } from "@/lib/uploads";
 import Nav from "@/components/Nav";
 import SosButton from "@/components/SosButton";
 import Footer from "@/components/Footer";
@@ -30,11 +31,13 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body>
         <I18nProvider>
           <AuthProvider>
+            <UploadProvider>
             <Nav />
             <KycBanner />
             <main className="page-enter mx-auto max-w-6xl px-4 pb-10 pt-6 md:px-6">{children}</main>
             <Footer />
             <SosButton />
+            </UploadProvider>
           </AuthProvider>
         </I18nProvider>
       </body>

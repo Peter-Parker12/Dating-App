@@ -4,13 +4,31 @@ import { usePathname } from "next/navigation";
 import { ShieldAlert, ShieldCheck } from "lucide-react";
 import { isApproved, useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
+import { DOC_KINDS, useUploads } from "@/lib/uploads";
 
 /** Shown to every non-admin account until an admin approves their verification. */
 export default function KycBanner() {
   const { me } = useAuth();
   const { t } = useI18n();
   const path = usePathname();
+  const { submitQueued, busy, progress, slots } = useUploads();
   if (!me || isApproved(me) || path.startsWith("/verify")) return null;
+
+  // Submitted, but photos are still uploading in the background (the user is free to browse meanwhile).
+  if (submitQueued) {
+    const failed = DOC_KINDS.some((k) => slots[k].phase === "error");
+    return (
+      <div className={`border-b ${failed ? "border-red-200 bg-red-50" : "border-line-strong bg-brand-100"}`} role="status">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5 text-sm md:px-6">
+          <ShieldCheck size={18} className={`shrink-0 ${failed ? "text-red-600" : "text-brand-600"}`} />
+          <p className="min-w-0 flex-1 text-ink">
+            {failed ? t("kyc.banner.uploadFailed") : `${t("kyc.banner.uploading")}${busy ? ` (${progress}%)` : "..."}`}
+          </p>
+          <Link href="/verify" className="btn-primary !px-4 !py-1.5">{t("kyc.progress")}</Link>
+        </div>
+      </div>
+    );
+  }
 
   const inReview = me.kycStatus === "IN_REVIEW";
   const rejected = me.kycStatus === "REJECTED";

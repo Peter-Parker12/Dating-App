@@ -14,7 +14,7 @@ export default function TalentCard({ talent, saved, onToggleSave, actLabel = (a:
       <Link href={`/talent/${talent.id}`} className="relative block aspect-[4/4.3] overflow-hidden rounded-[16px] bg-brand-100">
         {photo ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={photo} alt={talent.displayName} className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105" />
+          <img src={photo} alt={talent.displayName} loading="lazy" decoding="async" className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105" />
         ) : (
           <div className="flex h-full items-center justify-center text-6xl font-black text-brand-300">{talent.displayName.charAt(0)}</div>
         )}

@@ -46,7 +46,7 @@ export default function TalentPage({ params }: { params: Promise<{ id: string }>
           <div className="grid grid-cols-4 gap-2">
             {talent.photos.slice(1).map((src) => (
               // eslint-disable-next-line @next/next/no-img-element
-              <img key={src} src={src} alt={talent.displayName} className="aspect-square w-full rounded-xl object-cover" />
+              <img key={src} src={src} alt={talent.displayName} loading="lazy" decoding="async" className="aspect-square w-full rounded-xl object-cover" />
             ))}
           </div>
         )}

@@ -58,7 +58,7 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     sign: { expiresIn: "7d" },
   });
   app.register(rateLimit, { global: false });
-  app.register(multipart, { limits: { fileSize: 5 * 1024 * 1024, files: 3 } });
+  app.register(multipart, { limits: { fileSize: 5 * 1024 * 1024, files: 1 } });
 
   app.decorateRequest("kyc", "PENDING");
   const auth = async (req: FastifyRequest, reply: FastifyReply) => {
@@ -562,53 +562,85 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
   });
 
   // ---------- KYC: documents ----------
-  const KYC_FIELDS = { idImage: "idImageKey", studentCard: "studentCardKey", profileImage: "profileImageKey" } as const;
+  // Each document is uploaded on its own (so the browser can send them in parallel, in the background, and
+  // retry one without resending the others). Submitting for review is then a tiny request.
+  const DOC_COLUMN = { id: "idImageKey", student: "studentCardKey", profile: "profileImageKey" } as const;
+  type DocKind = keyof typeof DOC_COLUMN;
+  const docKind = (v: unknown): DocKind | null => (typeof v === "string" && v in DOC_COLUMN ? (v as DocKind) : null);
   const removeFile = (key: string | null | undefined) => (key ? unlink(path.join(UPLOAD_DIR, key)).catch(() => {}) : Promise.resolve());
+  const sendImage = (reply: FastifyReply, key: string) => {
+    const ext = path.extname(key);
+    reply.header("Cache-Control", "private, no-store");
+    reply.type(ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg");
+    return reply.send(createReadStream(path.join(UPLOAD_DIR, key)));
+  };
 
-  app.post("/api/kyc/submit", { preHandler: auth, config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req, reply) => {
+  app.post("/api/kyc/documents/:kind", { preHandler: auth, config: { rateLimit: { max: 40, timeWindow: "1 minute" } } }, async (req, reply) => {
     if (isStaff(req.user.role)) return reply.code(400).send({ error: "staff_exempt" });
-    const newKeys: Partial<Record<keyof typeof KYC_FIELDS, string>> = {};
-    const discard = () => Promise.all(Object.values(newKeys).map(removeFile));
+    const kind = docKind((req.params as { kind: string }).kind);
+    if (!kind) return reply.code(404).send({ error: "not_found" });
+    const column = DOC_COLUMN[kind];
+
+    let buf: Buffer;
     try {
-      for await (const part of req.parts()) {
-        if (part.type !== "file") continue;
-        if (!(part.fieldname in KYC_FIELDS)) { part.file.resume(); continue; }
-        const buf = await part.toBuffer();
-        const ext = sniffImage(buf);
-        if (!ext) { await discard(); return reply.code(400).send({ error: "bad_file_type", field: part.fieldname }); }
-        const key = `${randomUUID()}.${ext}`;
-        await writeFile(path.join(UPLOAD_DIR, key), buf);
-        newKeys[part.fieldname as keyof typeof KYC_FIELDS] = key;
-      }
+      const part = await req.file();
+      if (!part) return reply.code(400).send({ error: "no_file" });
+      buf = await part.toBuffer();
     } catch (e) {
-      await discard();
       if ((e as { code?: string }).code === "FST_REQ_FILE_TOO_LARGE") return reply.code(413).send({ error: "file_too_large" });
       throw e;
     }
+    const ext = sniffImage(buf);
+    if (!ext) return reply.code(400).send({ error: "bad_file_type" });
 
+    const before = (await prisma.user.findUniqueOrThrow({ where: { id: req.user.id } }))[column];
+    const key = `${randomUUID()}.${ext}`;
+    await writeFile(path.join(UPLOAD_DIR, key), buf);
+    // Only replace while the account can still change its documents, atomically, so a concurrent
+    // submit for review cannot have its files swapped out from under the admin.
+    const res = await prisma.user.updateMany({ where: { id: req.user.id, kycStatus: { in: ["PENDING", "REJECTED"] } }, data: { [column]: key } });
+    if (res.count === 0) { await removeFile(key); return reply.code(409).send({ error: "not_allowed" }); }
+    await removeFile(before);   // replaced documents are deleted so old personal data does not linger
+    return { kind, uploaded: true };
+  });
+
+  app.delete("/api/kyc/documents/:kind", { preHandler: auth }, async (req, reply) => {
+    const kind = docKind((req.params as { kind: string }).kind);
+    if (!kind) return reply.code(404).send({ error: "not_found" });
+    const column = DOC_COLUMN[kind];
+    const before = (await prisma.user.findUniqueOrThrow({ where: { id: req.user.id } }))[column];
+    const res = await prisma.user.updateMany({ where: { id: req.user.id, kycStatus: { in: ["PENDING", "REJECTED"] } }, data: { [column]: null } });
+    if (res.count === 0) return reply.code(409).send({ error: "not_allowed" });
+    await removeFile(before);
+    return { kind, uploaded: false };
+  });
+
+  /** A user can look at their own uploaded documents (for the preview on the verification page). */
+  app.get("/api/kyc/documents/:kind", { preHandler: auth }, async (req, reply) => {
+    const kind = docKind((req.params as { kind: string }).kind);
+    if (!kind) return reply.code(404).send({ error: "not_found" });
     const u = await prisma.user.findUniqueOrThrow({ where: { id: req.user.id } });
-    const merged = {
-      idImageKey: newKeys.idImage ?? u.idImageKey,
-      studentCardKey: newKeys.studentCard ?? u.studentCardKey,
-      profileImageKey: newKeys.profileImage ?? u.profileImageKey,
-    };
+    const key = u[DOC_COLUMN[kind]];
+    if (!key || !existsSync(path.join(UPLOAD_DIR, key))) return reply.code(404).send({ error: "not_found" });
+    return sendImage(reply, key);
+  });
+
+  app.post("/api/kyc/submit", { preHandler: auth, config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req, reply) => {
+    if (isStaff(req.user.role)) return reply.code(400).send({ error: "staff_exempt" });
+    const u = await prisma.user.findUniqueOrThrow({ where: { id: req.user.id } });
     const blocker = submitBlocker({
       kyc: u.kycStatus, emailVerified: !!u.emailVerifiedAt, phoneVerified: !!u.phoneVerifiedAt,
-      hasId: !!merged.idImageKey, hasStudentCard: !!merged.studentCardKey, hasProfileImage: !!merged.profileImageKey,
+      hasId: !!u.idImageKey, hasStudentCard: !!u.studentCardKey, hasProfileImage: !!u.profileImageKey,
     });
-    if (blocker) {
-      await discard();
-      return reply.code(blocker === "not_allowed" ? 409 : 400).send({ error: blocker });
-    }
-    await prisma.user.update({
-      where: { id: u.id },
-      data: { ...merged, kycStatus: "IN_REVIEW", kycSubmittedAt: new Date(), kycRejectReason: null },
+    if (blocker) return reply.code(blocker === "not_allowed" ? 409 : 400).send({ error: blocker });
+    const res = await prisma.user.updateMany({
+      where: { id: u.id, kycStatus: { in: ["PENDING", "REJECTED"] } },
+      data: { kycStatus: "IN_REVIEW", kycSubmittedAt: new Date(), kycRejectReason: null },
     });
-    // Replaced documents are deleted so old personal data does not linger on disk.
-    if (newKeys.idImage) await removeFile(u.idImageKey);
-    if (newKeys.studentCard) await removeFile(u.studentCardKey);
-    if (newKeys.profileImage) await removeFile(u.profileImageKey);
+    if (res.count === 0) return reply.code(409).send({ error: "not_allowed" });
 
+    // Notifications only write a row and push a socket event here; the emails go out in the background,
+    // so a slow or unreachable mail server never holds up this response.
     await notifyUser(u.id, "KYC_SUBMITTED");
     const reviewers = await prisma.user.findMany({ where: { role: { in: ["ADMIN", "MODERATOR"] }, status: "ACTIVE" }, select: { id: true } });
     await Promise.all(reviewers.map((a) => notifyUser(a.id, "KYC_NEW_SUBMISSION", { name: u.name }, { email: false })));
