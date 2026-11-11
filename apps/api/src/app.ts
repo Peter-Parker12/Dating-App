@@ -23,7 +23,8 @@ import { invalidateEmailConfig, readStoredEmail, resolveEmailConfig, type Stored
 import { encryptSecret } from "./secrets.js";
 import { DAYS, normalizeSlots, slotsForDay } from "./schedule.js";
 import { checkOtpState, generateOtp, hashOtp, otpMatches, OTP_MAX_ATTEMPTS, OTP_MAX_PER_HOUR, OTP_TTL_MS, resendWaitMs } from "./otp.js";
-import { createNotifier, otpMessage, sendEmail, sendEmailStrict, sendSms } from "./notify.js";
+import { createNotifier, sendEmail, sendEmailStrict, sendSms } from "./notify.js";
+import { otpEmail, otpSms, testEmail } from "./mailTemplates.js";
 
 export const UPLOAD_DIR = process.env.UPLOAD_DIR ?? path.resolve("uploads");
 const COOKIE = "session";
@@ -527,9 +528,9 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
       data: { userId: u.id, channel, target, codeHash: hashOtp(code, otpSecret(), u.id, channel, target), expiresAt: new Date(Date.now() + OTP_TTL_MS) },
     });
     try {
-      const m = otpMessage(u.locale === "en" ? "en" : "vi", code);
-      if (ch.data === "email") await sendEmail(target, m.subject, m.text);
-      else await sendSms(target, m.text);
+      const locale = u.locale === "en" ? "en" : "vi";
+      if (ch.data === "email") { const m = otpEmail(locale, u.name, code); await sendEmail(target, m.subject, m.text); }
+      else await sendSms(target, otpSms(locale, code));
     } catch (e) {
       await prisma.otpCode.delete({ where: { id: row.id } });
       req.log.error({ err: (e as Error).message }, "otp delivery failed");
@@ -814,7 +815,9 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     const p = z.object({ to: z.string().email() }).safeParse(req.body);
     if (!p.success) return reply.code(400).send({ error: "invalid" });
     try {
-      await sendEmailStrict(p.data.to, "Cùng Đi: test email", "This is a test email from the Cùng Đi admin settings. If you can read this, email delivery works.");
+      const me = await prisma.user.findUniqueOrThrow({ where: { id: req.user.id }, select: { name: true, locale: true } });
+      const m = testEmail(me.locale === "en" ? "en" : "vi", me.name);
+      await sendEmailStrict(p.data.to, m.subject, m.text);
       return { ok: true };
     } catch (e) {
       const msg = (e as Error).message;
