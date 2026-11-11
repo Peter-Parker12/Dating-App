@@ -25,13 +25,14 @@ describe("kyc rules", () => {
     expect(mayReview("IN_REVIEW")).toBe(true);
     expect(mayReview("PENDING")).toBe(false);
   });
-  it("submission needs verified email, phone and all three images", () => {
+  it("submission needs one verified contact (email or phone) and all three images", () => {
     const ok = { kyc: "PENDING", emailVerified: true, phoneVerified: true, hasId: true, hasStudentCard: true, hasProfileImage: true } as const;
     expect(submitBlocker(ok)).toBeNull();
     expect(submitBlocker({ ...ok, kyc: "REJECTED" })).toBeNull();
     expect(submitBlocker({ ...ok, kyc: "IN_REVIEW" })).toBe("not_allowed");
-    expect(submitBlocker({ ...ok, emailVerified: false })).toBe("email_unverified");
-    expect(submitBlocker({ ...ok, phoneVerified: false })).toBe("phone_unverified");
+    expect(submitBlocker({ ...ok, emailVerified: false })).toBeNull();              // phone alone is enough
+    expect(submitBlocker({ ...ok, phoneVerified: false })).toBeNull();              // email alone is enough
+    expect(submitBlocker({ ...ok, emailVerified: false, phoneVerified: false })).toBe("contact_unverified");
     expect(submitBlocker({ ...ok, hasStudentCard: false })).toBe("missing_documents");
     expect(submitBlocker({ ...ok, hasProfileImage: false })).toBe("missing_documents");
     expect(submitBlocker({ ...ok, hasId: false })).toBe("missing_documents");

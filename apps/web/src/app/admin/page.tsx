@@ -125,7 +125,7 @@ export default function Admin() {
               </div>
             ) : (
               <div className="flex gap-2">
-                <button className="btn-primary !py-1.5" disabled={!p.emailVerified || !p.phoneVerified} onClick={() => void review(p.id, true)}>{t("admin.approve")}</button>
+                <button className="btn-primary !py-1.5" disabled={!p.emailVerified && !p.phoneVerified} onClick={() => void review(p.id, true)}>{t("admin.approve")}</button>
                 <button className="btn-ghost !py-1.5" onClick={() => { setRejecting(p.id); setReason(""); }}>{t("admin.reject")}</button>
               </div>
             )}

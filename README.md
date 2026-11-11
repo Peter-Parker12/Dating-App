@@ -26,8 +26,8 @@ Prices per service or session are intentionally not included yet.
 
 ## Account verification (KYC)
 New accounts are `PENDING`: they can view profiles, and nothing else, until an admin approves them.
-To apply, a user verifies their email and phone (6-digit codes), then uploads an ID photo, student card and
-profile image. Admins review the submission under **Admin > KYC** and approve or reject (with a reason);
+To apply, a user verifies their email or their phone (either one is enough; 6-digit codes), then uploads an ID photo,
+student card and profile image. Admins review the submission under **Admin > KYC** and approve or reject (with a reason);
 rejected users can resubmit. Users get an in-app notification and an email on every status change. Admins are
 exempt, and the SOS button works for everyone.
 
@@ -40,9 +40,10 @@ with a "send test email" button). The password is encrypted at rest (AES-256-GCM
 back to `JWT_SECRET`: keep it stable, or saved passwords become unreadable) and is never returned by the API.
 Settings saved there override the `SMTP_*` environment variables. SMS still uses the Twilio variables.
 
-Delivery needs configuring in `.env` (see `.env.example`) or in the admin UI: SMTP for email, Twilio for SMS. Without them,
-codes and notifications are only written to the API log, which is fine for development but means real users
-cannot verify. Demo profiles are seeded as already approved.
+Delivery needs configuring in `.env` (see `.env.example`) or in the admin UI: SMTP for email, Twilio for SMS.
+Configure at least SMTP: users only need to verify one of email or phone, so email alone is enough to get started.
+With neither configured, codes and notifications are only written to the API log, which is fine for development but
+means real users cannot verify. Demo profiles are seeded as already approved.
 
 ## Deploy (VPS, Docker)
 ```bash

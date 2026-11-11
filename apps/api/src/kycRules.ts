@@ -27,12 +27,12 @@ export interface SubmitState {
   hasProfileImage: boolean;
 }
 
-export type SubmitBlock = "not_allowed" | "email_unverified" | "phone_unverified" | "missing_documents";
+export type SubmitBlock = "not_allowed" | "contact_unverified" | "missing_documents";
 
 export function submitBlocker(s: SubmitState): SubmitBlock | null {
   if (!mayResubmit(s.kyc)) return "not_allowed";
-  if (!s.emailVerified) return "email_unverified";
-  if (!s.phoneVerified) return "phone_unverified";
+  // Verifying either the email or the phone is enough; both are collected at sign-up.
+  if (!s.emailVerified && !s.phoneVerified) return "contact_unverified";
   if (!s.hasId || !s.hasStudentCard || !s.hasProfileImage) return "missing_documents";
   return null;
 }

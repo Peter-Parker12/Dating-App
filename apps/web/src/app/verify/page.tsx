@@ -18,7 +18,7 @@ const ERRORS: Record<string, Key> = {
   too_soon: "verify.tooSoon", too_many: "verify.tooMany", send_failed: "verify.sendFailed", no_code: "verify.noCode",
   code_expired: "verify.codeExpired", code_locked: "verify.codeLocked", code_used: "verify.noCode",
   bad_file_type: "verify.badType", file_too_large: "verify.tooLarge", missing_documents: "verify.needDocs",
-  email_unverified: "verify.needSteps", phone_unverified: "verify.needSteps",
+  contact_unverified: "verify.needSteps",
 };
 
 function OtpStep({ channel, me, onVerified }: { channel: Channel; me: Me; onVerified: () => void }) {
@@ -106,7 +106,7 @@ export default function Verify() {
     setPreviews((c) => ({ ...c, [field]: url }));
   };
 
-  const stepsDone = me.emailVerified && me.phoneVerified;
+  const stepsDone = me.emailVerified || me.phoneVerified;
   const docsReady = DOCS.every((d) => files[d.field] || me[d.has]);
   const canSubmit = stepsDone && docsReady && !busy;
 
@@ -152,6 +152,7 @@ export default function Verify() {
           <p className="mt-1 text-muted">{t("verify.resubmitHint")}</p>
         </div>
       )}
+      <p className="rounded-md bg-brand-100 p-2.5 text-sm font-semibold text-brand-700">{t("verify.either")}</p>
       <OtpStep channel="email" me={me} onVerified={() => void refresh()} />
       <OtpStep channel="phone" me={me} onVerified={() => void refresh()} />
       <form onSubmit={(e) => void submit(e)} className="card space-y-3">
