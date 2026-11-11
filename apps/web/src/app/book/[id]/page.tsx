@@ -1,7 +1,7 @@
 "use client";
 import { use, useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { api, type Activity } from "@/lib/api";
+import { api, ApiError, type Activity } from "@/lib/api";
 import { useI18n, type Key } from "@/lib/i18n";
 import { useRequireAuth } from "@/lib/useRequireAuth";
 
@@ -29,7 +29,10 @@ export default function Book({ params }: { params: Promise<{ id: string }> }) {
       await api("/bookings", { method: "POST", json: { talentId: id, ...f, conductAccepted: true } });
       window.alert(t("book.done"));
       router.push("/bookings");
-    } catch { setErr(t("auth.error")); }
+    } catch (x) {
+      const known: Record<string, Key> = { duplicate_booking: "book.err.duplicate_booking", date_in_past: "book.err.date_in_past", not_found: "book.err.not_found" };
+      setErr(t(known[x instanceof ApiError ? x.code : ""] ?? "auth.error"));
+    }
     setBusy(false);
   };
 

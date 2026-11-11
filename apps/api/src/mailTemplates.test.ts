@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { notificationEmail, otpEmail, otpSms, testEmail, type NotificationType } from "./mailTemplates.js";
+import { formatDay, notificationEmail, otpEmail, otpSms, testEmail, type NotificationType } from "./mailTemplates.js";
 
-const TYPES: NotificationType[] = ["KYC_SUBMITTED", "KYC_APPROVED", "KYC_REJECTED", "KYC_NEW_SUBMISSION", "ACCOUNT_SUSPENDED", "ACCOUNT_REACTIVATED", "ROLE_MODERATOR", "ROLE_MEMBER"];
+const TYPES: NotificationType[] = ["KYC_SUBMITTED", "KYC_APPROVED", "KYC_REJECTED", "KYC_NEW_SUBMISSION", "ACCOUNT_SUSPENDED", "ACCOUNT_REACTIVATED", "ROLE_MODERATOR", "ROLE_MEMBER",
+  "BOOKING_REQUESTED", "BOOKING_ACCEPTED", "BOOKING_DECLINED", "BOOKING_CANCELLED", "BOOKING_COMPLETED", "REVIEW_RECEIVED", "REVIEW_REPLIED"];
 const EMOJI = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u;
 
 describe("email wording", () => {
@@ -18,7 +19,7 @@ describe("email wording", () => {
   });
   it("every notification exists in both languages with a branded subject, greeting and signature", () => {
     for (const locale of ["vi", "en"] as const) for (const type of TYPES) {
-      const m = notificationEmail(locale, type, "An", { reason: "Ảnh mờ", name: "Bình" });
+      const m = notificationEmail(locale, type, "An", { reason: "Ảnh mờ", name: "Bình", activityVi: "Cà phê", activityEn: "Coffee", date: "2030-03-10", time: "19:00", hours: "2", place: "Highlands", rating: "5", role: "customer" });
       expect(m.subject.startsWith("[Cùng Đi] ")).toBe(true);
       expect(m.subject.length).toBeGreaterThan(14);
       expect(m.text).toMatch(locale === "vi" ? /^Kính gửi An,/ : /^Dear An,/);
@@ -45,5 +46,28 @@ describe("email wording", () => {
   });
   it("test email names the admin", () => {
     expect(testEmail("vi", "Admin").text.startsWith("Kính gửi Admin,")).toBe(true);
+  });
+});
+
+describe("booking emails", () => {
+  const data = { name: "Minh Anh", activityVi: "Cà phê", activityEn: "Coffee", date: "2030-03-09", time: "19:30", hours: "2", place: "Highlands Coffee, Quận 1" };
+  it("show the full booking details in the recipient's language", () => {
+    const vi = notificationEmail("vi", "BOOKING_ACCEPTED", "Lan", data).text;
+    expect(vi).toContain("Minh Anh đã chấp nhận yêu cầu đặt lịch");
+    expect(vi).toContain("- Hoạt động: Cà phê");
+    expect(vi).toContain("- Thời gian: 19:30, 09/03/2030 (2 giờ)");
+    expect(vi).toContain("- Địa điểm: Highlands Coffee, Quận 1");
+    const en = notificationEmail("en", "BOOKING_REQUESTED", "Minh", data).text;
+    expect(en).toContain("new booking request from Minh Anh");
+    expect(en).toContain("- Activity: Coffee");
+    expect(en).toContain("- Time: 19:30, 9 March 2030 (2 hours)");
+  });
+  it("only asks the customer for a review", () => {
+    expect(notificationEmail("en", "BOOKING_COMPLETED", "A", { ...data, role: "customer" }).text).toContain("review your experience");
+    expect(notificationEmail("en", "BOOKING_COMPLETED", "A", { ...data, role: "talent" }).text).not.toContain("review your experience");
+  });
+  it("formats calendar days without time-zone drift", () => {
+    expect(formatDay("2030-01-01", "vi")).toBe("01/01/2030");
+    expect(formatDay("2030-12-31T00:00:00.000Z", "en")).toBe("31 December 2030");
   });
 });

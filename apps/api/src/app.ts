@@ -15,7 +15,7 @@ import { prisma } from "./db.js";
 import { maskContacts } from "./mask.js";
 import { listProvinces, listWards, resolveAddress } from "./geo.js";
 import { normalizeVnPhone } from "./validators.js";
-import { actorFor, canTransition, chatOpen } from "./bookingRules.js";
+import { actorFor, bookingsOverlap, canComplete, canTransition, chatOpen, isInPast } from "./bookingRules.js";
 import { averageRating, canReviewBooking, ratingBreakdown, withinEditWindow } from "./reviewRules.js";
 import { isPubliclyVisible, isStaff, mayAct, mayReview, sniffImage, submitBlocker } from "./kycRules.js";
 import { demoteBlocker, promoteBlocker, roleAfterDemotion } from "./staffRules.js";
@@ -335,6 +335,26 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
   });
 
   // ---------- bookings ----------
+  const givenName = (full: string) => full.trim().split(/\s+/).pop() ?? "";
+  const DAY_MS = 24 * 3600 * 1000;
+
+  /** Everything a booking notification or email needs, with the activity in both languages. */
+  async function bookingNoticeData(
+    b: { id: string; activity: string; date: Date; startTime: string; hours: number; place: string },
+    name: string, extra: Record<string, string> = {},
+  ): Promise<Record<string, string>> {
+    const a = await prisma.activity.findUnique({ where: { slug: b.activity } });
+    return {
+      bookingId: b.id, name, activityVi: a?.nameVi ?? b.activity, activityEn: a?.nameEn ?? b.activity,
+      date: b.date.toISOString().slice(0, 10), time: b.startTime, hours: String(b.hours), place: b.place, ...extra,
+    };
+  }
+  /** Active bookings of a user within a day of the given one (enough to find any time overlap). */
+  const nearbyActive = (where: { customerId?: string; talentId?: string }, statuses: ("PENDING" | "ACCEPTED")[], date: Date, excludeId?: string) =>
+    prisma.booking.findMany({
+      where: { ...where, status: { in: statuses }, date: { gte: new Date(date.getTime() - DAY_MS), lte: new Date(date.getTime() + DAY_MS) }, ...(excludeId ? { id: { not: excludeId } } : {}) },
+    });
+
   const bookingSchema = z.object({
     talentId: z.string(),
     activity: z.string().min(1).max(40),
@@ -350,9 +370,13 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     const p = bookingSchema.safeParse(req.body);
     if (!p.success) return reply.code(400).send({ error: "invalid", issues: p.error.issues });
     const d = p.data;
-    if (d.date.getTime() < Date.now() - 24 * 3600 * 1000) return reply.code(400).send({ error: "date_in_past" });
+    if (isInPast(d)) return reply.code(400).send({ error: "date_in_past" });
     const talent = await prisma.talentProfile.findUnique({ where: { userId: d.talentId }, include: { user: true } });
-    if (!talent || !talent.published || talent.user.status !== "ACTIVE") return reply.code(404).send({ error: "not_found" });
+    // Talents who are not approved are hidden from the site, so they cannot be booked by guessing an id either.
+    if (!talent || !talent.published || talent.user.status !== "ACTIVE" || !isPubliclyVisible(talent.user.kycStatus))
+      return reply.code(404).send({ error: "not_found" });
+    const mine = await nearbyActive({ customerId: req.user.id, talentId: d.talentId }, ["PENDING", "ACCEPTED"], d.date);
+    if (mine.some((x) => bookingsOverlap(x, d))) return reply.code(409).send({ error: "duplicate_booking" });
     const booking = await prisma.booking.create({
       data: {
         customerId: req.user.id, talentId: d.talentId, activity: d.activity, date: d.date,
@@ -360,6 +384,8 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
         acks: { create: { userId: req.user.id } },
       },
     });
+    const customer = await prisma.user.findUniqueOrThrow({ where: { id: req.user.id }, select: { name: true } });
+    await notifyUser(d.talentId, "BOOKING_REQUESTED", await bookingNoticeData(booking, givenName(customer.name)));
     return booking;
   });
 
@@ -386,7 +412,32 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     const actor = actorFor(req.user.id, b);
     if (!actor) return reply.code(404).send({ error: "not_found" });
     if (!canTransition(actor, b.status, p.data.status)) return reply.code(409).send({ error: "bad_transition" });
-    return prisma.booking.update({ where: { id }, data: { status: p.data.status } });
+    if (p.data.status === "COMPLETED" && !canComplete(b)) return reply.code(409).send({ error: "too_early" });
+    if (p.data.status === "ACCEPTED") {
+      // A talent cannot accept two meetups that overlap in time.
+      const taken = await nearbyActive({ talentId: b.talentId }, ["ACCEPTED"], b.date, b.id);
+      if (taken.some((x) => bookingsOverlap(x, b))) return reply.code(409).send({ error: "time_conflict" });
+    }
+    // Compare-and-set, so two quick clicks (or both parties at once) cannot apply the same transition twice.
+    const res = await prisma.booking.updateMany({ where: { id, status: b.status }, data: { status: p.data.status } });
+    if (res.count === 0) return reply.code(409).send({ error: "bad_transition" });
+
+    const [customer, talent] = await Promise.all([
+      prisma.user.findUniqueOrThrow({ where: { id: b.customerId }, select: { name: true } }),
+      prisma.talentProfile.findUnique({ where: { userId: b.talentId }, select: { displayName: true } }),
+    ]);
+    const talentName = talent?.displayName ?? (await prisma.user.findUniqueOrThrow({ where: { id: b.talentId }, select: { name: true } })).name;
+    const customerName = givenName(customer.name);
+    switch (p.data.status) {
+      case "ACCEPTED": await notifyUser(b.customerId, "BOOKING_ACCEPTED", await bookingNoticeData(b, talentName)); break;
+      case "DECLINED": await notifyUser(b.customerId, "BOOKING_DECLINED", await bookingNoticeData(b, talentName)); break;
+      case "CANCELLED": await notifyUser(b.talentId, "BOOKING_CANCELLED", await bookingNoticeData(b, customerName)); break;
+      case "COMPLETED":
+        if (actor === "talent") await notifyUser(b.customerId, "BOOKING_COMPLETED", await bookingNoticeData(b, talentName, { role: "customer" }));
+        else await notifyUser(b.talentId, "BOOKING_COMPLETED", await bookingNoticeData(b, customerName, { role: "talent" }));
+        break;
+    }
+    return prisma.booking.findUniqueOrThrow({ where: { id } });
   });
 
   // ---------- chat ----------
@@ -441,6 +492,8 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
       data: { bookingId: id, talentId: b.talentId, customerId: req.user.id, rating: p.data.rating, comment: maskContacts(p.data.comment).text },
     });
     await recalcRating(b.talentId);
+    const author = await prisma.user.findUniqueOrThrow({ where: { id: req.user.id }, select: { name: true } });
+    await notifyUser(b.talentId, "REVIEW_RECEIVED", { bookingId: id, name: givenName(author.name), rating: String(p.data.rating) }, { email: false });
     return review;
   });
 
@@ -465,7 +518,10 @@ export function buildApp(getIO: () => IOServer | null = () => null) {
     const r = await prisma.review.findUnique({ where: { id } });
     if (!r || r.talentId !== req.user.id) return reply.code(404).send({ error: "not_found" });
     if (r.reply) return reply.code(409).send({ error: "already_replied" });
-    return prisma.review.update({ where: { id }, data: { reply: maskContacts(p.data.reply).text, repliedAt: new Date() } });
+    const updated = await prisma.review.update({ where: { id }, data: { reply: maskContacts(p.data.reply).text, repliedAt: new Date() } });
+    const me = await prisma.talentProfile.findUnique({ where: { userId: req.user.id }, select: { displayName: true } });
+    await notifyUser(r.customerId, "REVIEW_REPLIED", { bookingId: r.bookingId, name: me?.displayName ?? "" }, { email: false });
+    return updated;
   });
 
   app.get("/api/talents/:id/reviews", async (req, reply) => {

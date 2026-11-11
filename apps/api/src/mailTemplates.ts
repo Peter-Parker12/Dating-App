@@ -3,7 +3,9 @@ export type Locale = "vi" | "en";
 
 export type NotificationType =
   | "KYC_SUBMITTED" | "KYC_APPROVED" | "KYC_REJECTED" | "KYC_NEW_SUBMISSION"
-  | "ACCOUNT_SUSPENDED" | "ACCOUNT_REACTIVATED" | "ROLE_MODERATOR" | "ROLE_MEMBER";
+  | "ACCOUNT_SUSPENDED" | "ACCOUNT_REACTIVATED" | "ROLE_MODERATOR" | "ROLE_MEMBER"
+  | "BOOKING_REQUESTED" | "BOOKING_ACCEPTED" | "BOOKING_DECLINED" | "BOOKING_CANCELLED" | "BOOKING_COMPLETED"
+  | "REVIEW_RECEIVED" | "REVIEW_REPLIED";
 
 export interface Mail { subject: string; text: string }
 
@@ -51,6 +53,24 @@ export function otpSms(locale: Locale, code: string): string {
   return locale === "vi"
     ? `${SMS_BRAND}: Ma xac minh cua Quy khach la ${code}. Co hieu luc trong 10 phut. Khong chia se ma nay voi bat ky ai.`
     : `${SMS_BRAND}: Your verification code is ${code}. Valid for 10 minutes. Do not share it with anyone.`;
+}
+
+const MONTHS_EN = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+/** "2030-03-10" -> "10/03/2030" (vi) or "10 March 2030" (en). Dates are plain calendar days, so no time zone is involved. */
+export function formatDay(iso: string, locale: Locale): string {
+  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  return locale === "vi" ? `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}/${y}` : `${d} ${MONTHS_EN[m - 1]} ${y}`;
+}
+
+/** The booking summary shown in every booking email. */
+function bookingDetails(locale: Locale, d: Record<string, string>): string {
+  const activity = (locale === "vi" ? d.activityVi : d.activityEn) || d.activityVi || d.activityEn || "";
+  const when = `${d.time ?? ""}, ${formatDay(d.date ?? "", locale)}${d.hours ? ` (${d.hours} ${locale === "vi" ? "giờ" : d.hours === "1" ? "hour" : "hours"})` : ""}`;
+  return locale === "vi"
+    ? `Chi tiết lịch hẹn:\n- Hoạt động: ${activity}\n- Thời gian: ${when}\n- Địa điểm: ${d.place ?? ""}`
+    : `Booking details:\n- Activity: ${activity}\n- Time: ${when}\n- Place: ${d.place ?? ""}`;
 }
 
 export function notificationEmail(locale: Locale, type: NotificationType, name: string, data: Record<string, string> = {}): Mail {
@@ -112,6 +132,51 @@ export function notificationEmail(locale: Locale, type: NotificationType, name: 
     ROLE_MEMBER: vi
       ? { subject: "Quyền điều hành viên đã được gỡ", body: ["Chúng tôi xin thông báo quyền điều hành viên của Quý khách đã được gỡ. Tài khoản của Quý khách trở lại là tài khoản thành viên thông thường."] }
       : { subject: "Moderator access removed", body: ["We wish to inform you that your moderator access has been removed. Your account has returned to a regular member account."] },
+    BOOKING_REQUESTED: vi
+      ? { subject: "Có yêu cầu đặt lịch mới", body: [
+          `Quý khách vừa nhận được một yêu cầu đặt lịch mới từ ${clean(data.name ?? "một khách hàng")}.`, bookingDetails(locale, data),
+          "Xin vui lòng đăng nhập và vào mục Lịch hẹn để chấp nhận hoặc từ chối yêu cầu này trong thời gian sớm nhất.",
+        ] }
+      : { subject: "New booking request", body: [
+          `You have received a new booking request from ${clean(data.name ?? "a customer")}.`, bookingDetails(locale, data),
+          "Please log in and open the Bookings section to accept or decline this request as soon as possible.",
+        ] },
+    BOOKING_ACCEPTED: vi
+      ? { subject: "Yêu cầu đặt lịch đã được chấp nhận", body: [
+          `${clean(data.name ?? "Bạn đồng hành")} đã chấp nhận yêu cầu đặt lịch của Quý khách.`, bookingDetails(locale, data),
+          "Quý khách có thể nhắn tin trực tiếp trong mục Lịch hẹn. Xin lưu ý chỉ gặp mặt tại địa điểm công cộng và tuân thủ Quy tắc ứng xử của nền tảng.",
+        ] }
+      : { subject: "Your booking request was accepted", body: [
+          `${clean(data.name ?? "Your companion")} has accepted your booking request.`, bookingDetails(locale, data),
+          "You can now message each other in the Bookings section. Please meet only in a public place and follow the platform's code of conduct.",
+        ] },
+    BOOKING_DECLINED: vi
+      ? { subject: "Yêu cầu đặt lịch không được chấp nhận", body: [
+          `Rất tiếc, ${clean(data.name ?? "bạn đồng hành")} không thể nhận yêu cầu đặt lịch của Quý khách.`, bookingDetails(locale, data),
+          "Quý khách có thể tham khảo và gửi yêu cầu đến một bạn đồng hành khác trong mục Khám phá.",
+        ] }
+      : { subject: "Your booking request was declined", body: [
+          `We regret to inform you that ${clean(data.name ?? "the companion")} is unable to accept your booking request.`, bookingDetails(locale, data),
+          "You are welcome to browse and send a request to another companion in the Explore section.",
+        ] },
+    BOOKING_CANCELLED: vi
+      ? { subject: "Lịch hẹn đã được hủy", body: [`${clean(data.name ?? "Khách hàng")} đã hủy lịch hẹn dưới đây.`, bookingDetails(locale, data)] }
+      : { subject: "A booking was cancelled", body: [`${clean(data.name ?? "The customer")} has cancelled the booking below.`, bookingDetails(locale, data)] },
+    BOOKING_COMPLETED: vi
+      ? { subject: "Lịch hẹn đã hoàn tất", body: [
+          `Lịch hẹn với ${clean(data.name ?? "đối tác")} đã được ghi nhận là hoàn tất.`, bookingDetails(locale, data),
+          ...(data.role === "customer" ? ["Quý khách vui lòng dành ít phút để đánh giá trải nghiệm trong mục Lịch hẹn. Ý kiến của Quý khách giúp cộng đồng ngày càng tốt hơn."] : []),
+        ] }
+      : { subject: "Booking completed", body: [
+          `Your booking with ${clean(data.name ?? "your partner")} has been marked as completed.`, bookingDetails(locale, data),
+          ...(data.role === "customer" ? ["We would appreciate it if you could take a moment to review your experience in the Bookings section. Your feedback helps the community."] : []),
+        ] },
+    REVIEW_RECEIVED: vi
+      ? { subject: "Quý khách có đánh giá mới", body: [`${clean(data.name ?? "Một khách hàng")} vừa gửi đánh giá ${data.rating ?? ""} sao cho Quý khách. Quý khách có thể xem và phản hồi trong mục Talent.`] }
+      : { subject: "You have a new review", body: [`${clean(data.name ?? "A customer")} has left you a ${data.rating ?? ""}-star review. You can read it and reply in the Talent section.`] },
+    REVIEW_REPLIED: vi
+      ? { subject: "Có phản hồi cho đánh giá của Quý khách", body: [`${clean(data.name ?? "Bạn đồng hành")} đã phản hồi đánh giá của Quý khách.`] }
+      : { subject: "A reply to your review", body: [`${clean(data.name ?? "The companion")} has replied to your review.`] },
   };
   const { subject, body } = subjectAndBody[type];
   return compose(locale, name, subject, body);

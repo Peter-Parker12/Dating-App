@@ -3,10 +3,11 @@ import { useEffect, useState } from "react";
 import { api, type Notice } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { useRequireAuth } from "@/lib/useRequireAuth";
-import { noticeText } from "@/components/noticeText";
+import Link from "next/link";
+import { noticeHref, noticeText } from "@/components/noticeText";
 
 export default function Notifications() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { me } = useRequireAuth();
   const [items, setItems] = useState<Notice[] | null>(null);
   useEffect(() => {
@@ -21,9 +22,12 @@ export default function Notifications() {
       {items.length === 0 ? <p className="text-muted">{t("notif.empty")}</p> : (
         <ul className="grid gap-2.5">
           {items.map((n) => (
-            <li key={n.id} className={`card !p-3.5 ${n.readAt ? "" : "border-brand-300"}`}>
-              <p className="text-sm text-ink">{noticeText(n, t)}</p>
-              <time className="text-xs text-muted">{new Date(n.createdAt).toLocaleString()}</time>
+            <li key={n.id} className={`card !p-0 ${n.readAt ? "" : "border-brand-300"}`}>
+              {(() => {
+                const href = noticeHref(n);
+                const body = (<><p className="text-sm text-ink">{noticeText(n, t, locale)}</p><time className="text-xs text-muted">{new Date(n.createdAt).toLocaleString()}</time></>);
+                return href ? <Link href={href} className="block rounded-lg p-3.5 hover:bg-brand-50">{body}</Link> : <div className="p-3.5">{body}</div>;
+              })()}
             </li>
           ))}
         </ul>

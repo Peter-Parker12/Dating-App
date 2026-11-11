@@ -24,6 +24,14 @@ for (activities and a short note); approved talents see these in the "Looking fo
 province, activities and note (never full name, phone, email or address). Customers who leave it empty are not listed.
 Prices per service or session are intentionally not included yet.
 
+## Bookings
+A customer sends a request (activity, date, start time, hours, public place) to an approved talent, who accepts or
+declines. Chat opens once a booking is accepted. Rules enforced by the API: only approved, active talents can be
+booked; a start time in the past is refused; a customer cannot send overlapping requests to the same talent; a talent
+cannot accept two overlapping bookings; and a booking can only be marked completed after it has started, which is what
+unlocks reviews. Times are Vietnam local time (UTC+7). Every step notifies the other person in-app, and by email for
+booking events (new request, accepted, declined, cancelled, completed); reviews and replies are in-app only.
+
 ## Account verification (KYC)
 New accounts are `PENDING`: they can view profiles, and nothing else, until an admin approves them.
 To apply, a user verifies their email or their phone (either one is enough; 6-digit codes), then uploads an ID photo,

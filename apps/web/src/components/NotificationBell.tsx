@@ -6,11 +6,17 @@ import { io } from "socket.io-client";
 import { api, type Notice } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
-import { noticeText } from "./noticeText";
+import { noticeHref, noticeText } from "./noticeText";
+
+function NoticeLink({ href, onNavigate, children }: { href: string | null; onNavigate: () => void; children: React.ReactNode }) {
+  return href
+    ? <Link href={href} onClick={onNavigate} className="block rounded-md px-2 py-2 hover:bg-brand-50">{children}</Link>
+    : <div className="px-2 py-2">{children}</div>;
+}
 
 export default function NotificationBell() {
   const { me, refresh } = useAuth();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [unread, setUnread] = useState(0);
   const [items, setItems] = useState<Notice[]>([]);
   const [open, setOpen] = useState(false);
@@ -61,8 +67,12 @@ export default function NotificationBell() {
           {items.length === 0 ? <p className="p-3 text-sm text-muted">{t("notif.empty")}</p> : (
             <ul className="divide-y divide-line">
               {items.map((n) => (
-                <li key={n.id} className="px-2 py-2 text-sm"><p className="text-ink">{noticeText(n, t)}</p>
-                  <time className="text-xs text-muted">{new Date(n.createdAt).toLocaleString()}</time></li>
+                <li key={n.id} className="text-sm">
+                  <NoticeLink href={noticeHref(n)} onNavigate={() => setOpen(false)}>
+                    <p className="text-ink">{noticeText(n, t, locale)}</p>
+                    <time className="text-xs text-muted">{new Date(n.createdAt).toLocaleString()}</time>
+                  </NoticeLink>
+                </li>
               ))}
             </ul>
           )}
